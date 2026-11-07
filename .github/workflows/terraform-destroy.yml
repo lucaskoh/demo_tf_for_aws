@@ -1,0 +1,60 @@
+name: Terraform Destroy
+
+# Manual trigger: Actions → Terraform Destroy → Run workflow → type "destroy"
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to tear down the demo environment'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+# Shares a group with apply so apply and destroy never run at the same time
+concurrency:
+  group: terraform-apply
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_region: ${{ vars.AWS_REGION }}
+  TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
+  TF_VAR_record_name: ${{ vars.RECORD_NAME }}
+  TF_VAR_ci_plan_role_arn: ${{ vars.AWS_PLAN_ROLE_ARN }}
+  TF_VAR_ci_apply_role_arn: ${{ vars.AWS_APPLY_ROLE_ARN }}
+
+jobs:
+  destroy:
+    name: destroy
+    # Requires typing "destroy" and can only run from the main branch
+    if: ${{ inputs.confirm == 'destroy' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    # Same environment as apply: Required reviewers can add a second approval
+    environment: production
+    defaults:
+      run:
+        working-directory: envs/demo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.10"
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: terraform plan -destroy
+        run: terraform plan -destroy -no-color -input=false -out=tfplan-destroy
+
+      - name: terraform apply (destroy)
+        run: terraform apply -no-color -input=false tfplan-destroy
