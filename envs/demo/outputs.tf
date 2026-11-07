@@ -1,11 +1,11 @@
 output "demo_url_eks" {
   description = "Page served by Nginx on EKS (VPC-A)"
-  value       = "http://${module.dns.fqdn}/html1"
+  value       = "http://${local.demo_host}/html1"
 }
 
 output "demo_url_ec2" {
   description = "Page served by Nginx on EC2 (VPC-B, via VPC Peering)"
-  value       = "http://${module.dns.fqdn}/html2"
+  value       = "http://${local.demo_host}/html2"
 }
 
 output "nlb_dns_name" {

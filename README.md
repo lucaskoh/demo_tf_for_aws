@@ -4,7 +4,7 @@
 [![AWS](https://img.shields.io/badge/AWS-ap--northeast--1-FF9900?logo=amazonaws)](https://aws.amazon.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-A low-cost, reproducible reference architecture that serves **two backends living in two different VPCs** behind a single domain, using **NLB → ALB → path-based routing**, **VPC Peering**, and **Security Group chaining**.
+A low-cost, reproducible reference architecture that serves **two backends living in two different VPCs** behind a single entry point, using **NLB → ALB → path-based routing**, **VPC Peering**, and **Security Group chaining**.
 
 - `/html1` → Nginx running on **Amazon EKS** (VPC-A, Spot node)
 - `/html2` → Nginx running on **Amazon EC2** (VPC-B, reached over VPC Peering)
@@ -39,7 +39,7 @@ Everything is provisioned with Terraform and can be created and destroyed in min
 ```mermaid
 flowchart TB
     user([Browser])
-    r53["Route 53<br/>demo.example.com"]
+    r53["Route 53 (optional)<br/>demo.example.com"]
     s3[("S3 Bucket<br/>static images")]
 
     user -->|"1. HTTP request"| r53
@@ -63,7 +63,7 @@ flowchart TB
 
 **Request flow**
 
-1. The browser resolves `demo.<your-domain>` through a Route 53 alias record that points to the NLB.
+1. The browser reaches the NLB. With a domain, `demo.<your-domain>` resolves through a Route 53 alias record that points to the NLB; without a domain, use the NLB's own DNS name (see the `nlb_dns_name` output).
 2. The NLB forwards TCP :80 to the ALB (an `alb`-type target group).
 3. The ALB inspects the URL path and routes to the matching target group:
    - `/html1*` → EKS worker node on NodePort `30080`
@@ -165,7 +165,7 @@ aws-multi-vpc-terraform/
 - [Terraform](https://developer.hashicorp.com/terraform/install) `>= 1.10`
 - [AWS CLI](https://aws.amazon.com/cli/) (also used by the Kubernetes provider to fetch EKS tokens) configured with credentials that can create VPC, EC2, EKS, ELB, S3, IAM, and Route 53 resources
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) (optional, for inspecting the cluster)
-- A **Route 53 hosted zone** for a domain you own
+- *(Optional)* A **Route 53 hosted zone** for a domain you own. Without one, the demo is reached through the NLB DNS name.
 
 ---
 
@@ -184,7 +184,7 @@ terraform apply -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 
 # 3. Put the bucket name into envs/demo/backend.tf, then deploy
 cd ../envs/demo
-cp terraform.tfvars.example terraform.tfvars   # edit domain_name, eks_admin_principal_arns, etc.
+cp terraform.tfvars.example terraform.tfvars   # edit eks_admin_principal_arns (and domain_name if you have one)
 terraform init
 terraform plan
 terraform apply
@@ -215,17 +215,20 @@ The Makefile wraps the common commands. Run `make help` to list them. The enviro
 ### Verify
 
 ```bash
-curl http://demo.<your-domain>/html1   # Hello from EKS (VPC-A)
-curl http://demo.<your-domain>/html2   # Hello from EC2 (VPC-B via VPC Peering)
-curl http://demo.<your-domain>/        # 404 with usage hint
+# <host> is demo.<your-domain>, or the NLB DNS name if you did not set domain_name
+curl http://<host>/html1   # Hello from EKS (VPC-A)
+curl http://<host>/html2   # Hello from EC2 (VPC-B via VPC Peering)
+curl http://<host>/        # 404 with usage hint
 ```
 
-Terraform also prints the URLs as outputs:
+Terraform also prints the URLs as outputs. With a domain:
 
 ```
 demo_url_eks = "http://demo.example.com/html1"
 demo_url_ec2 = "http://demo.example.com/html2"
 ```
+
+Without a domain, the host is the NLB DNS name (for example `demo-nlb-1234567890.elb.ap-northeast-1.amazonaws.com`).
 
 ---
 
@@ -236,8 +239,8 @@ Set these in `envs/demo/terraform.tfvars`:
 | Variable | Default | Description |
 |---|---|---|
 | `region` | `ap-northeast-1` | AWS region |
-| `domain_name` | (required) | Existing public Route 53 hosted zone, e.g. `example.com` |
-| `record_name` | `demo` | Subdomain for the demo (`demo.example.com`) |
+| `domain_name` | `""` | Existing public Route 53 hosted zone, e.g. `example.com`. Empty = no DNS record; use the NLB DNS name |
+| `record_name` | `demo` | Subdomain for the demo (`demo.example.com`). Only used when `domain_name` is set |
 | `name` | `demo` | Name prefix for resources (1-20 chars: lowercase letters, digits, hyphens) |
 | `vpc_a_cidr` | `10.0.0.0/16` | CIDR of VPC-A |
 | `vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B |
@@ -248,7 +251,7 @@ Set these in `envs/demo/terraform.tfvars`:
 | `ci_plan_role_arn` | `""` | CI plan role (read-only EKS access). Set by CI from `AWS_PLAN_ROLE_ARN` |
 | `ci_apply_role_arn` | `""` | CI apply role (EKS admin). Set by CI from `AWS_APPLY_ROLE_ARN` |
 
-`domain_name` has no default and must be set in `terraform.tfvars` (or by CI).
+`domain_name` is optional. Set it to create the Route 53 alias record; leave it empty to skip DNS.
 
 ---
 
@@ -295,8 +298,8 @@ flowchart LR
    | Variable | Value |
    |---|---|
    | `AWS_REGION` | e.g. `ap-northeast-1` |
-   | `DOMAIN_NAME` | your Route 53 zone, e.g. `example.com` |
-   | `RECORD_NAME` | e.g. `demo` |
+   | `DOMAIN_NAME` | *(optional)* your Route 53 zone, e.g. `example.com` |
+   | `RECORD_NAME` | *(optional)* e.g. `demo` (defaults to `demo`) |
    | `AWS_PLAN_ROLE_ARN` | `plan_role_arn` output |
    | `AWS_APPLY_ROLE_ARN` | `apply_role_arn` output |
 

@@ -131,7 +131,9 @@ module "nlb" {
   alb_arn    = module.alb.alb_arn
 }
 
+# Optional: only created when domain_name is set
 module "dns" {
+  count  = local.dns_enabled ? 1 : 0
   source = "../../modules/dns"
 
   zone_name      = var.domain_name

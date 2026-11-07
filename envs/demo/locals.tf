@@ -14,6 +14,10 @@ locals {
 
   ec2_private_ip = coalesce(var.ec2_private_ip, cidrhost(local.vpc_b_subnet_cidr, 100))
 
+  # DNS is optional: without a domain the demo is reached through the NLB DNS name
+  dns_enabled = var.domain_name != ""
+  demo_host   = local.dns_enabled ? module.dns[0].fqdn : module.nlb.nlb_dns_name
+
   bucket_name = "${var.name}-assets-${data.aws_caller_identity.current.account_id}-${var.region}"
 
   # Who may administer / read the EKS cluster

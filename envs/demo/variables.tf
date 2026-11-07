@@ -21,17 +21,13 @@ variable "name" {
 }
 
 variable "domain_name" {
-  description = "Name of an existing public Route 53 hosted zone (e.g. example.com)"
+  description = "Name of an existing public Route 53 hosted zone (e.g. example.com). Empty = no DNS record; use the NLB DNS name instead."
   type        = string
-
-  validation {
-    condition     = length(var.domain_name) > 0
-    error_message = "domain_name must not be empty (is the DOMAIN_NAME GitHub variable set?)."
-  }
+  default     = ""
 }
 
 variable "record_name" {
-  description = "Subdomain for the demo (demo -> demo.example.com)"
+  description = "Subdomain for the demo (demo -> demo.example.com). Only used when domain_name is set."
   type        = string
   default     = "demo"
 

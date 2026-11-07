@@ -1,9 +1,11 @@
 # Copy to terraform.tfvars (git-ignored) and edit.
 # In CI these values come from GitHub repository variables instead.
 
-region      = "ap-northeast-1"
-domain_name = "example.com" # an existing public Route 53 hosted zone
-record_name = "demo"        # -> demo.example.com
+region = "ap-northeast-1"
+# Optional: set both to get demo.example.com. Without a domain the demo is
+# reached through the NLB DNS name (see the demo_url_* outputs).
+# domain_name = "example.com" # an existing public Route 53 hosted zone
+# record_name = "demo"        # -> demo.example.com
 
 # Local runs only: IAM users/roles that get cluster-admin on EKS.
 # Use the role ARN, not an assumed-role session ARN.
