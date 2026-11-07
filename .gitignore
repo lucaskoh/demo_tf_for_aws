@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# Terraform
+# ---------------------------------------------------------------------------
+# Local provider / module cache
+**/.terraform/*
+
+# State files (state lives in S3; bootstrap/ uses local state, keep a backup elsewhere)
+*.tfstate
+*.tfstate.*
+
+# Saved plans (may contain sensitive values)
+*.tfplan
+tfplan
+tfplan-destroy
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Local overrides
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI config
+.terraformrc
+terraform.rc
+
+# Variable files may contain secrets; terraform.tfvars.example stays tracked
+*.tfvars
+*.tfvars.json
+
+# NOTE: do NOT ignore .terraform.lock.hcl. Commit it so everyone (and CI)
+# uses the same provider versions.
+
+# ---------------------------------------------------------------------------
+# OS / editor
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
