@@ -1,7 +1,7 @@
 terraform {
   backend "s3" {
     # state_bucket_name output from bootstrap (backend blocks cannot use variables)
-    bucket = "REPLACE_WITH_STATE_BUCKET_NAME"
+    bucket = "lucaskoh-tfstate-demo-22f4d2"
     key    = "aws-multi-vpc/demo/terraform.tfstate"
     region = "ap-northeast-1"
 
