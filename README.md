@@ -79,6 +79,7 @@ flowchart TB
 |---|---|
 | **No NAT Gateway / Transit Gateway** | NAT Gateway and TGW are billed hourly plus per GB. Public subnets with locked-down Security Groups plus VPC Peering (free) keep the demo cheap. |
 | **NLB in front of ALB** | Gives a static entry point (L4) while keeping L7 path routing on the ALB. |
+| **Internal ALB** | The ALB only has private IPs and is reachable only through the NLB. Set `internal = false` in the `alb` module to make it internet-facing. |
 | **ALB with `instance` target for EKS** | The Node Group's Auto Scaling Group is attached directly to the target group. This avoids installing the AWS Load Balancer Controller for a demo. |
 | **ALB with `ip` target for EC2** | Allows the ALB in VPC-A to target a private IP in the peered VPC-B. |
 | **Spot instances for EKS nodes** | Lowest-cost compute for a short-lived environment. |
@@ -91,13 +92,15 @@ flowchart TB
 | Component | CIDR / IP | AZ | Purpose |
 |---|---|---|---|
 | **VPC-A** | `10.0.0.0/16` | - | Entry layer (NLB, ALB) and EKS |
-| ├ `vpc-a-public-1` | `10.0.1.0/24` | ap-northeast-1a | ALB/NLB node, EKS Spot node |
-| └ `vpc-a-public-2` | `10.0.2.0/24` | ap-northeast-1c | ALB/NLB node (ALB requires 2 AZs) |
+| ├ `vpc-a-public-1` | `10.0.1.0/24` | 1st AZ of the region | ALB/NLB node, EKS Spot node |
+| └ `vpc-a-public-2` | `10.0.2.0/24` | 2nd AZ of the region | ALB/NLB node (ALB requires 2 AZs) |
 | **VPC-B** | `10.1.0.0/16` | - | Standalone EC2 workload |
-| └ `vpc-b-public-1` | `10.1.1.0/24` | ap-northeast-1a | EC2 with fixed IP `10.1.1.100` |
+| └ `vpc-b-public-1` | `10.1.1.0/24` | 1st AZ of the region | EC2 with fixed IP `10.1.1.100` |
 | **VPC Peering** | - | - | A route table: `10.1.0.0/16 → pcx`; B route table: `10.0.0.0/16 → pcx` |
 
 The two CIDR blocks do not overlap, which is required for VPC Peering.
+
+Subnet CIDRs are derived from the VPC CIDRs (`/16` → `/24`). The AZs are the first two available AZs of the region, sorted by name (in `ap-northeast-1` that is `ap-northeast-1a` and `ap-northeast-1c`), so the table stays valid when you change `region`.
 
 ---
 
@@ -121,7 +124,8 @@ Direct requests to a node's or the EC2 instance's public IP are dropped.
 aws-multi-vpc-terraform/
 ├── README.md
 ├── LICENSE
-├── Makefile                  # make init / plan / apply / destroy
+├── .gitignore
+├── Makefile                  # make help lists all targets
 ├── .github/
 │   └── workflows/
 │       ├── terraform-plan.yml      # on PR: checks + plan comment
@@ -159,7 +163,7 @@ aws-multi-vpc-terraform/
 ## Prerequisites
 
 - [Terraform](https://developer.hashicorp.com/terraform/install) `>= 1.10`
-- [AWS CLI](https://aws.amazon.com/cli/) configured with credentials that can create VPC, EC2, EKS, ELB, S3, IAM, and Route 53 resources
+- [AWS CLI](https://aws.amazon.com/cli/) (also used by the Kubernetes provider to fetch EKS tokens) configured with credentials that can create VPC, EC2, EKS, ELB, S3, IAM, and Route 53 resources
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) (optional, for inspecting the cluster)
 - A **Route 53 hosted zone** for a domain you own
 
@@ -180,14 +184,33 @@ terraform apply -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 
 # 3. Put the bucket name into envs/demo/backend.tf, then deploy
 cd ../envs/demo
-cp terraform.tfvars.example terraform.tfvars   # edit domain_name etc.
+cp terraform.tfvars.example terraform.tfvars   # edit domain_name, eks_admin_principal_arns, etc.
 terraform init
 terraform plan
 terraform apply
 ```
 
+> **Note:** set `eks_admin_principal_arns` to your own IAM user/role ARN when running locally, otherwise nobody has cluster-admin on the EKS cluster and the Kubernetes resources cannot be created.
+
 > **Tip:** if the first `apply` fails because the Kubernetes provider cannot reach the cluster yet, run
 > `terraform apply -target=module.eks` first, then run a full `terraform apply`.
+
+### Makefile shortcuts
+
+The Makefile wraps the common commands. Run `make help` to list them. The environment defaults to `ENV=demo` (override with `make plan ENV=staging`).
+
+| Command | What it does |
+|---|---|
+| `make bootstrap GITHUB_REPO=owner/repo` | One time: create the state bucket and CI roles |
+| `make fmt` / `make fmt-check` | Format Terraform files / check formatting (same as CI) |
+| `make validate` | `init -backend=false` and `validate`; no AWS credentials needed |
+| `make lint` | Run `tflint` on all modules |
+| `make init` | Initialize the environment with the S3 backend |
+| `make plan` | Create an execution plan, saved as `tfplan` |
+| `make apply` | Run `plan`, then apply the saved plan |
+| `make destroy` | Destroy the environment (asks for confirmation) |
+| `make output` | Show outputs (demo URLs) |
+| `make clean` | Remove `.terraform/` caches and saved plans |
 
 ### Verify
 
@@ -210,14 +233,22 @@ demo_url_ec2 = "http://demo.example.com/html2"
 
 Set these in `envs/demo/terraform.tfvars`:
 
-| Variable | Example | Description |
+| Variable | Default | Description |
 |---|---|---|
 | `region` | `ap-northeast-1` | AWS region |
-| `domain_name` | `example.com` | Route 53 hosted zone name |
-| `record_name` | `demo` | Subdomain for the demo |
+| `domain_name` | (required) | Existing public Route 53 hosted zone, e.g. `example.com` |
+| `record_name` | `demo` | Subdomain for the demo (`demo.example.com`) |
+| `name` | `demo` | Name prefix for resources (1-20 chars: lowercase letters, digits, hyphens) |
 | `vpc_a_cidr` | `10.0.0.0/16` | CIDR of VPC-A |
 | `vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B |
-| `ec2_private_ip` | `10.1.1.100` | Fixed private IP of the EC2 instance |
+| `ec2_private_ip` | `null` | Fixed private IP of the EC2 instance. `null` = the `.100` address of the VPC-B subnet (`10.1.1.100`) |
+| `node_port` | `30080` | Kubernetes NodePort between the ALB and the EKS nodes |
+| `kubernetes_version` | `null` | EKS version. `null` = the EKS default for new clusters |
+| `eks_admin_principal_arns` | `[]` | IAM users/roles with cluster-admin on EKS for local runs (the CI apply role is added automatically) |
+| `ci_plan_role_arn` | `""` | CI plan role (read-only EKS access). Set by CI from `AWS_PLAN_ROLE_ARN` |
+| `ci_apply_role_arn` | `""` | CI apply role (EKS admin). Set by CI from `AWS_APPLY_ROLE_ARN` |
+
+`domain_name` has no default and must be set in `terraform.tfvars` (or by CI).
 
 ---
 
@@ -310,6 +341,7 @@ Remember to run `terraform destroy` when you are done. Setting up an [AWS Budget
 This project is a **learning / demo environment**, not a production blueprint.
 
 - **HTTP only.** To enable HTTPS, add an ACM certificate and a port 443 listener to the ALB.
+- **Public EKS API endpoint.** It is open to `0.0.0.0/0` (CI runners need it); restrict `public_access_cidrs` in the `eks` module for real use.
 - **Public subnets for compute.** Chosen to avoid NAT Gateway cost. Production workloads should use private subnets.
 - **Public S3 bucket** for demo images. For production, use CloudFront with Origin Access Control.
 - **Spot nodes** can be reclaimed at any time.
