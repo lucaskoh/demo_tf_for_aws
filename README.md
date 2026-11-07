@@ -129,7 +129,7 @@ aws-multi-vpc-terraform/
 ├── .github/
 │   └── workflows/
 │       ├── terraform-plan.yml      # on PR: checks + plan comment
-│       ├── terraform-apply.yml     # on merge to main: apply
+│       ├── terraform-apply.yml     # manual: apply
 │       └── terraform-destroy.yml   # manual: tear everything down
 ├── assets/                   # images uploaded to S3 by Terraform
 │   ├── eks-logo.png
@@ -192,8 +192,8 @@ terraform apply
 
 > **Note:** set `eks_admin_principal_arns` to your own IAM user/role ARN when running locally, otherwise nobody has cluster-admin on the EKS cluster and the Kubernetes resources cannot be created.
 
-> **Tip:** if the first `apply` fails because the Kubernetes provider cannot reach the cluster yet, run
-> `terraform apply -target=module.eks` first, then run a full `terraform apply`.
+> **Tip:** a single `terraform apply` normally works. If the first `apply` fails because the Kubernetes provider cannot reach the cluster yet, re-run it, or run
+> `terraform apply -target=module.eks` first and then a full `terraform apply`.
 
 ### Makefile shortcuts
 
@@ -281,13 +281,13 @@ flowchart LR
     B --> C["plan<br/>posted as PR comment"]
     C --> D["Review and approve"]
     D --> E["Merge to main"]
-    E --> F["apply<br/>after production approval"]
+    E --> F["Run Terraform Apply manually<br/>after production approval"]
 ```
 
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `terraform-plan.yml` | Pull request to `main` | Runs `fmt -check`, `validate`, `tflint`, `tfsec`, then `terraform plan` and posts (or updates) the plan as a PR comment. Uses the read-only **plan role**. |
-| `terraform-apply.yml` | Push (merge) to `main` | Runs `terraform plan` then `terraform apply` in the `production` environment. Uses the **apply role**. |
+| `terraform-apply.yml` | Manual (`workflow_dispatch`) | Runs `terraform plan` then `terraform apply` in the `production` environment. Must run from `main` and needs `production` approval. Merging does not deploy. Uses the **apply role**. |
 | `terraform-destroy.yml` | Manual (`workflow_dispatch`) | Destroys the demo environment. Requires typing `destroy`, running from `main`, and `production` approval. |
 
 ### One-time setup
@@ -315,9 +315,10 @@ flowchart LR
 
 ### Known caveats
 
-- **First deployment:** the Kubernetes provider needs an existing cluster. Run the first `terraform apply -target=module.eks` locally, then let CI handle everything afterwards.
+- **First deployment:** the Kubernetes provider is configured from the EKS cluster, which does not exist yet on the first run. A single `terraform apply` normally works; if it fails on the Kubernetes resources, re-run it, or run `terraform apply -target=module.eks` first.
 - **Reading Kubernetes resources in `plan`:** once the cluster exists, grant the plan role read access via an EKS access entry (`AmazonEKSViewPolicy`), otherwise `plan` fails on Kubernetes resources.
-- **Apply re-plans:** `apply` runs a fresh plan after merge, so the result can differ from the PR comment if the infrastructure changed in between.
+- **Apply re-plans:** `apply` runs a fresh plan when you trigger it, so the result can differ from the PR comment if the infrastructure changed in between.
+- **Drift between `main` and AWS:** because apply is manual, merged changes are not deployed until you run the workflow.
 
 ---
 
@@ -382,7 +383,7 @@ terraform destroy -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 - [ ] Private subnets + VPC endpoints as an alternative to public subnets
 - [ ] AWS Load Balancer Controller with Ingress instead of NodePort
 - [ ] CloudFront in front of S3 assets
-- [x] GitHub Actions: `fmt`, `validate`, `tflint`, `tfsec`, plan on PR, apply on merge, manual destroy
+- [x] GitHub Actions: `fmt`, `validate`, `tflint`, `tfsec`, plan on PR, manual apply, manual destroy
 - [ ] Make `tfsec` findings blocking
 - [ ] Least-privilege policy for the apply role
 - [ ] Scheduled auto-destroy for the demo environment

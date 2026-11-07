@@ -1,13 +1,8 @@
 name: Terraform Apply
 
+# Manual trigger: Actions → Terraform Apply → Run workflow (merging does not deploy)
 on:
-  push:
-    branches: [main]
-    paths:
-      - "envs/**"
-      - "modules/**"
-      - "assets/**"
-      - ".github/workflows/terraform-*.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,6 +24,8 @@ env:
 jobs:
   apply:
     name: apply
+    # Can only run from the main branch
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     # Bound to an environment: Required reviewers in GitHub give a manual approval before apply,
     # and the AWS apply role only trusts OIDC tokens from this environment
