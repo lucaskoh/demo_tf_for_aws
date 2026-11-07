@@ -7,6 +7,8 @@ TF          ?= terraform
 ENV_DIR     := envs/$(ENV)
 BOOT_DIR    := bootstrap
 GITHUB_REPO ?=
+# Only for repos with immutable OIDC subject claims, e.g. repo:owner@123/name@456
+OIDC_SUB_PREFIX ?=
 
 .PHONY: help bootstrap fmt fmt-check init validate lint plan apply destroy output clean
 
@@ -16,7 +18,7 @@ help: ## Show this help
 bootstrap: ## One-time: create state bucket + CI roles (make bootstrap GITHUB_REPO=owner/repo)
 	@test -n "$(GITHUB_REPO)" || { echo "Usage: make bootstrap GITHUB_REPO=owner/repo"; exit 1; }
 	$(TF) -chdir=$(BOOT_DIR) init
-	$(TF) -chdir=$(BOOT_DIR) apply -var="github_repo=$(GITHUB_REPO)"
+	$(TF) -chdir=$(BOOT_DIR) apply -var="github_repo=$(GITHUB_REPO)" $(if $(OIDC_SUB_PREFIX),-var="github_oidc_subject_prefix=$(OIDC_SUB_PREFIX)")
 
 fmt: ## Format all Terraform files
 	$(TF) fmt -recursive

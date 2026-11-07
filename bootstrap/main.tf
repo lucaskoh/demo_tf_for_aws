@@ -18,6 +18,8 @@ data "aws_caller_identity" "current" {}
 
 locals {
   state_bucket_name = coalesce(var.state_bucket_name, "tfstate-${data.aws_caller_identity.current.account_id}-${var.region}")
+  # Subject prefix of the GitHub OIDC token. Repos with immutable subject claims need the ID form.
+  github_sub_prefix = coalesce(var.github_oidc_subject_prefix, "repo:${var.github_repo}")
   oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
 }
 
@@ -134,7 +136,7 @@ data "aws_iam_policy_document" "plan_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:pull_request"]
+      values   = ["${local.github_sub_prefix}:pull_request"]
     }
   }
 }
@@ -187,7 +189,7 @@ data "aws_iam_policy_document" "apply_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:environment:production"]
+      values   = ["${local.github_sub_prefix}:environment:production"]
     }
   }
 }
