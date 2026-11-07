@@ -31,8 +31,12 @@ terraform.rc
 *.tfvars
 *.tfvars.json
 
-# NOTE: do NOT ignore .terraform.lock.hcl. Commit it so everyone (and CI)
-# uses the same provider versions.
+# Provider lock files are not tracked in this repo.
+.terraform.lock.hcl
+
+# Local Claude Code context (kept out of the public repo)
+CLAUDE.md
+.claude/
 
 # ---------------------------------------------------------------------------
 # OS / editor
