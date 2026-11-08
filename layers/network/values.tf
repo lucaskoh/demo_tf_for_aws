@@ -1,7 +1,7 @@
-# Environment values come from ../values.yaml (shared by all layers).
+# Environment values come from envs/<environment>/values.yaml (shared by all layers).
 # Validation lives in the preconditions of data.aws_availability_zones.available.
 locals {
-  values = yamldecode(file("${path.module}/../values.yaml"))
+  values = yamldecode(file("${path.module}/../../envs/${var.environment}/values.yaml"))
   common = local.values.common
   config = local.values.network
 

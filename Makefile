@@ -1,15 +1,17 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-# Environment under envs/ (override with: make plan ENV=staging)
+# Environment = a folder under envs/ with a values.yaml (override with: make plan ENV=staging).
+# The Terraform code of the layers is shared by all environments (layers/).
 ENV         ?= demo
+# Every Terraform call for a layer goes through scripts/tf.sh (backend + environment)
 TF          ?= terraform
-ENV_DIR     := envs/$(ENV)
+TFL         := scripts/tf.sh $(ENV)
 # Layers in apply order (destroy runs in reverse). Each is its own root module and state.
 LAYERS      := network compute workloads edge
 # Layer for the single-layer targets: make plan LAYER=network
 LAYER       ?=
-LAYER_DIR   := $(ENV_DIR)/$(LAYER)
+LAYER_DIR   := layers/$(LAYER)
 BOOT_DIR    := bootstrap
 GITHUB_REPO ?=
 # Only for repos with immutable OIDC subject claims, e.g. repo:owner@123/name@456
@@ -36,13 +38,13 @@ check-layer:
 	@test -d "$(LAYER_DIR)" || { echo "Unknown layer: $(LAYER)"; exit 1; }
 
 init: check-layer ## Initialize one layer (LAYER=network)
-	$(TF) -chdir=$(LAYER_DIR) init
+	$(TFL) $(LAYER) init
 
 validate: ## Validate every layer without touching the backend
 	@for l in $(LAYERS); do \
 		echo "==> $$l"; \
-		$(TF) -chdir=$(ENV_DIR)/$$l init -backend=false -input=false >/dev/null && \
-		$(TF) -chdir=$(ENV_DIR)/$$l validate || exit 1; \
+		$(TFL) $$l init -backend=false -input=false >/dev/null && \
+		$(TFL) $$l validate || exit 1; \
 	done
 
 lint: ## Run tflint on all modules
@@ -50,13 +52,13 @@ lint: ## Run tflint on all modules
 	tflint --recursive
 
 plan: init ## Create an execution plan for one layer (saved as tfplan)
-	$(TF) -chdir=$(LAYER_DIR) plan -out=tfplan
+	$(TFL) $(LAYER) plan -out=tfplan
 
 apply: plan ## Apply the saved plan of one layer
-	$(TF) -chdir=$(LAYER_DIR) apply tfplan
+	$(TFL) $(LAYER) apply tfplan
 
 destroy: init ## Destroy one layer (asks for confirmation)
-	$(TF) -chdir=$(LAYER_DIR) destroy
+	$(TFL) $(LAYER) destroy
 
 apply-all: ## Apply every layer in order (network first)
 	@for l in $(LAYERS); do $(MAKE) apply LAYER=$$l || exit 1; done
@@ -65,8 +67,9 @@ destroy-all: ## Destroy every layer in reverse order (edge first); asks per laye
 	@for l in $(shell echo $(LAYERS) | tr ' ' '\n' | tac | tr '\n' ' '); do $(MAKE) destroy LAYER=$$l || exit 1; done
 
 output: check-layer ## Show the outputs of one layer (LAYER=edge for the demo URLs)
-	$(TF) -chdir=$(LAYER_DIR) output
+	$(TFL) $(LAYER) output
 
 clean: ## Remove local caches and saved plans
+	rm -rf .terraform-data
 	find . -type d -name .terraform -prune -exec rm -rf {} +
-	find $(ENV_DIR) -name 'tfplan*' -type f -delete
+	find layers -name 'tfplan*' -type f -delete

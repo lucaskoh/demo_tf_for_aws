@@ -3,6 +3,12 @@ name: Terraform Apply
 # Manual trigger: Actions → Terraform Apply → Run workflow (merging does not deploy)
 on:
   workflow_dispatch:
+    inputs:
+      env_name:
+        description: "Environment to apply (a folder under envs/)"
+        required: true
+        default: demo
+        type: string
 
 permissions:
   contents: read
@@ -34,6 +40,9 @@ jobs:
     # and the AWS apply role only trusts OIDC tokens from this environment.
     # All layers run as steps of this one job so the whole apply needs a single approval.
     environment: production
+    env:
+      # Passed through the environment, not interpolated into the scripts
+      ENV_NAME: ${{ inputs.env_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -51,33 +60,16 @@ jobs:
       # workloads and edge only depend on network and compute.
 
       - name: apply network
-        working-directory: envs/demo/network
-        run: |
-          terraform init -input=false
-          terraform plan -no-color -input=false -out=tfplan
-          terraform apply -no-color -input=false tfplan
+        run: bash .github/scripts/apply-layer.sh "$ENV_NAME" network
 
       - name: apply compute
-        working-directory: envs/demo/compute
-        run: |
-          terraform init -input=false
-          terraform plan -no-color -input=false -out=tfplan
-          terraform apply -no-color -input=false tfplan
+        run: bash .github/scripts/apply-layer.sh "$ENV_NAME" compute
 
       - name: apply workloads
-        working-directory: envs/demo/workloads
-        run: |
-          terraform init -input=false
-          terraform plan -no-color -input=false -out=tfplan
-          terraform apply -no-color -input=false tfplan
+        run: bash .github/scripts/apply-layer.sh "$ENV_NAME" workloads
 
       - name: apply edge
-        working-directory: envs/demo/edge
-        run: |
-          terraform init -input=false
-          terraform plan -no-color -input=false -out=tfplan
-          terraform apply -no-color -input=false tfplan
+        run: bash .github/scripts/apply-layer.sh "$ENV_NAME" edge
 
       - name: Show outputs
-        working-directory: envs/demo/edge
-        run: terraform output
+        run: scripts/tf.sh "$ENV_NAME" edge output

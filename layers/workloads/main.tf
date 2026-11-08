@@ -1,7 +1,7 @@
 data "terraform_remote_state" "network" {
   backend = "s3"
 
-  # Checks for the values read from ../values.yaml (see values.tf)
+  # Checks for the values read from envs/<environment>/values.yaml (see values.tf)
   lifecycle {
     precondition {
       condition     = length(local.region) > 0
@@ -16,7 +16,7 @@ data "terraform_remote_state" "network" {
 
   config = {
     bucket = local.state_bucket
-    key    = "aws-multi-vpc/demo/network/terraform.tfstate"
+    key    = "aws-multi-vpc/${var.environment}/network/terraform.tfstate"
     region = local.region
   }
 }
@@ -26,7 +26,7 @@ data "terraform_remote_state" "compute" {
 
   config = {
     bucket = local.state_bucket
-    key    = "aws-multi-vpc/demo/compute/terraform.tfstate"
+    key    = "aws-multi-vpc/${var.environment}/compute/terraform.tfstate"
     region = local.region
   }
 }
@@ -37,7 +37,7 @@ locals {
 }
 
 module "k8s_nginx" {
-  source = "../../../modules/k8s-nginx"
+  source = "../../modules/k8s-nginx"
 
   image_url = local.compute.s3_object_urls["eks-logo.png"]
   node_port = local.network.node_port

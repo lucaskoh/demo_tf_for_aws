@@ -5,7 +5,9 @@ on:
     branches: [main]
     paths:
       - "envs/**"
+      - "layers/**"
       - "modules/**"
+      - "scripts/**"
       - "assets/**"
       - ".github/workflows/terraform-*.yml"
       - ".github/scripts/**"
@@ -80,12 +82,18 @@ jobs:
           role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      # Plans network, compute, workloads and edge in order. A layer whose
-      # upstream layers are not deployed yet is skipped, not failed.
-      - name: terraform plan (all layers)
+      # Plans network, compute, workloads and edge in order, for every
+      # environment under envs/. A layer whose upstream layers are not deployed
+      # yet is skipped, not failed.
+      - name: terraform plan (all environments, all layers)
         id: plan
         continue-on-error: true
-        run: bash .github/scripts/plan-layers.sh
+        run: |
+          failed=0
+          for dir in envs/*/; do
+            bash .github/scripts/plan-layers.sh "$(basename "$dir")" || failed=1
+          done
+          exit "$failed"
 
       - name: Comment plan on PR
         if: always()
@@ -96,41 +104,51 @@ jobs:
           script: |
             const fs = require('fs');
             const marker = '<!-- terraform-plan -->';
-            const dir = 'plan-output';
+            const root = 'plan-output';
             const icons = { success: '✅', skipped: '⏭️', failed: '❌' };
             const maxPerLayer = 14000;
 
-            const summaryFile = `${dir}/summary.tsv`;
-            const rows = fs.existsSync(summaryFile)
-              ? fs.readFileSync(summaryFile, 'utf8').trim().split('\n').filter(Boolean).map(l => l.split('\t'))
-              : [];
+            // plan-output/<environment>/summary.tsv and <layer>.txt
+            const envs = fs.existsSync(root) ? fs.readdirSync(root).sort() : [];
+            const summaryLines = [];
+            const sections = [];
 
-            const sections = rows.map(([layer, status]) => {
-              const file = `${dir}/${layer}.txt`;
-              let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '(no output)';
-              // Comments are not masked by the runner, so hide the account ID here
-              const accountId = process.env.AWS_ACCOUNT_ID;
-              if (accountId) text = text.split(accountId).join('************');
-              if (text.length > maxPerLayer) {
-                text = text.slice(0, maxPerLayer) + '\n\n... (truncated, see workflow logs)';
+            for (const env of envs) {
+              const dir = `${root}/${env}`;
+              const summaryFile = `${dir}/summary.tsv`;
+              const rows = fs.existsSync(summaryFile)
+                ? fs.readFileSync(summaryFile, 'utf8').trim().split('\n').filter(Boolean).map(l => l.split('\t'))
+                : [];
+
+              summaryLines.push(`**${env}**: ` + (rows.map(([layer, status]) => `${icons[status] || '?'} \`${layer}\` ${status}`).join(' · ') || '(no plan output)'));
+
+              for (const [layer, status] of rows) {
+                const file = `${dir}/${layer}.txt`;
+                let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '(no output)';
+                // Comments are not masked by the runner, so hide the account ID here
+                const accountId = process.env.AWS_ACCOUNT_ID;
+                if (accountId) text = text.split(accountId).join('************');
+                if (text.length > maxPerLayer) {
+                  text = text.slice(0, maxPerLayer) + '\n\n... (truncated, see workflow logs)';
+                }
+                sections.push([
+                  `<details><summary>${icons[status] || '?'} <b>${env} / ${layer}</b>: ${status}</summary>`,
+                  '',
+                  '```terraform',
+                  text,
+                  '```',
+                  '',
+                  '</details>',
+                ].join('\n'));
               }
-              return [
-                `<details><summary>${icons[status] || '?'} <b>${layer}</b>: ${status}</summary>`,
-                '',
-                '```terraform',
-                text,
-                '```',
-                '',
-                '</details>',
-              ].join('\n');
-            });
+            }
 
             const ok = process.env.PLAN_OUTCOME === 'success';
             const body = [
               marker,
               `### Terraform Plan: ${ok ? '✅ success' : '❌ failed'}`,
               '',
-              rows.map(([layer, status]) => `${icons[status] || '?'} \`${layer}\` ${status}`).join(' · ') || '(no plan output)',
+              summaryLines.join('\n\n') || '(no plan output)',
               '',
               '_Layers whose upstream layers are not deployed yet are skipped; they cannot be planned until the upstream layers are applied._',
               '',

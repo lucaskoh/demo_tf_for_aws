@@ -49,3 +49,6 @@ Thumbs.db
 *~
 # CI plan logs (written by .github/scripts/plan-layers.sh)
 plan-output/
+
+# Per-environment Terraform data directories (see scripts/tf.sh)
+.terraform-data/
