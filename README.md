@@ -149,7 +149,7 @@ aws-multi-vpc-terraform/
 │   ├── vpc-peering/
 │   ├── security-group/       # one generic security group + rules map (used 3 times)
 │   ├── s3-assets/
-│   ├── ec2-nginx/
+│   ├── ec2-instance/         # one EC2 instance created from an image template
 │   ├── eks/
 │   ├── k8s-app/
 │   ├── alb/
@@ -160,6 +160,9 @@ aws-multi-vpc-terraform/
 │   ├── compute/              # S3 assets, EC2, EKS
 │   ├── workloads/            # Kubernetes Deployment + Service
 │   └── edge/                 # ALB, NLB, Route 53
+├── templates/
+│   ├── demo-page.html.tftpl  # the demo page (EKS and EC2)
+│   └── ec2/                  # EC2 image templates: templates.yaml + one user data file each
 ├── scripts/
 │   └── tf.sh                 # runs terraform for one environment and layer (backend + environment)
 └── envs/
@@ -296,8 +299,10 @@ workloads:
     image: busybox:1.36
 
 instances:
-  legacy: {}
+  legacy:
+    template: nginx-demo    # required: an EC2 image template
   reports:
+    template: nginx-demo
     instance_type: t3.small
 
 backends:
@@ -321,11 +326,29 @@ Names are lowercase letters, digits and hyphens. `<common.name>-<backend name>-t
 | `node_port` | derived from the name | NodePort (30000-32767). Only workloads that a backend routes to get one |
 | `page_title`, `page_heading` | from the name | Texts of the demo page (no `<`, `>`, `"` or line breaks) |
 
-**Instance fields** (all optional): `instance_type` (default `compute.ec2_instance_type`), `private_ip` (derived from the name; must be inside the VPC-B subnet), `page_title`, `page_heading`.
+**Instance fields**: `template` (required, an [EC2 image template](#ec2-image-templates)); optional `instance_type` (default `compute.ec2_instance_type`), `private_ip` (derived from the name; must be inside the VPC-B subnet), `page_title`, `page_heading`.
 
 **Backend fields**: `path` (required, one URL segment without slashes) and exactly one of `workload` or `instance` (required); optional `health_check_path` (ALB health check; default `/<path>/index.html` for the demo page) and `priority` (ALB rule priority 1-50000, derived from the name). The ALB forwards `/<path>` and `/<path>/*` without rewriting, so a custom image must serve under that prefix.
 
 The NodePort, the private IP and the priority are derived from the name with a hash, so adding or removing something never changes the numbers of the others. If two get the same number, `plan` fails with a message that names them; set the field on one of them. The network layer resolves everything once and publishes it as its `workloads`, `instances` and `backends` outputs; the other layers read those.
+
+### EC2 image templates
+
+An instance cannot choose its own AMI or boot script. It must name an image template that the platform team provides in `templates/ec2/templates.yaml`:
+
+```yaml
+nginx-demo:
+  description: Amazon Linux 2023 with Nginx serving the demo page
+  ami_name_pattern: al2023-ami-2023.*-x86_64
+  ami_owners: [amazon]
+  user_data_file: nginx-demo.sh.tftpl     # next to templates.yaml
+  root_volume_size: 8
+  root_volume_type: gp3
+```
+
+A template says which image to start from (the most recent AMI that matches) and what to run at boot. The user data file is a `templatefile()` template and receives `http_port`, `paths` (the URL paths routed to the instance) and `page_html`. The generic `ec2-instance` module requires an `image_template`; it does not know what runs on the instance. `plan` fails when an instance has no `template` or names one that does not exist.
+
+To add a template, the platform team adds an entry to `templates.yaml` and the user data file; no Terraform change is needed unless the template needs variables other than the three above.
 
 An Auto Scaling Group can be attached to a limited number of target groups (10 by default), which limits the number of backends that point to workloads.
 

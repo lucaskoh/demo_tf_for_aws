@@ -39,9 +39,10 @@ module "s3_assets" {
   }
 }
 
-# One instance per entry under instances: (the numbers come from the network layer)
+# One instance per entry under instances:. The numbers come from the network layer; what
+# runs on the instance comes from its image template (templates/ec2/templates.yaml).
 module "ec2" {
-  source   = "../../modules/ec2-nginx"
+  source   = "../../modules/ec2-instance"
   for_each = local.instances
 
   name               = "${local.name}-${each.key}"
@@ -49,15 +50,21 @@ module "ec2" {
   private_ip         = each.value.private_ip
   security_group_ids = [local.network.ec2_sg_id]
   instance_type      = coalesce(each.value.instance_type, local.ec2_instance_type)
-  http_port          = local.http_port
-  path_prefixes      = each.value.paths
 
-  page_html = trimspace(templatefile("${path.module}/../../templates/demo-page.html.tftpl", {
-    title     = each.value.page_title
-    heading   = each.value.page_heading
-    image_url = module.s3_assets.object_urls["ec2-logo.png"]
-    image_alt = "EC2 logo"
-  }))
+  image_template = merge(local.ec2_templates[each.value.template], {
+    user_data_file = "${path.module}/../../templates/ec2/${local.ec2_templates[each.value.template].user_data_file}"
+  })
+
+  template_vars = {
+    http_port = local.http_port
+    paths     = each.value.paths
+    page_html = trimspace(templatefile("${path.module}/../../templates/demo-page.html.tftpl", {
+      title     = each.value.page_title
+      heading   = each.value.page_heading
+      image_url = module.s3_assets.object_urls["ec2-logo.png"]
+      image_alt = "EC2 logo"
+    }))
+  }
 }
 
 module "eks" {
