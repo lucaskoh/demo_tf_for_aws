@@ -1,10 +1,28 @@
 data "terraform_remote_state" "network" {
   backend = "s3"
 
+  # Checks for the values read from ../values.yaml (see values.tf)
+  lifecycle {
+    precondition {
+      condition     = length(local.region) > 0
+      error_message = "common.region in values.yaml must not be empty."
+    }
+
+    precondition {
+      condition     = can(regex("^[a-z0-9-]{1,20}$", local.name))
+      error_message = "common.name in values.yaml must be 1-20 characters: lowercase letters, digits and hyphens."
+    }
+
+    precondition {
+      condition     = length(local.state_bucket) > 0
+      error_message = "common.state_bucket in values.yaml must not be empty."
+    }
+  }
+
   config = {
-    bucket = var.state_bucket
+    bucket = local.state_bucket
     key    = "aws-multi-vpc/demo/network/terraform.tfstate"
-    region = var.region
+    region = local.region
   }
 }
 
@@ -12,9 +30,9 @@ data "terraform_remote_state" "compute" {
   backend = "s3"
 
   config = {
-    bucket = var.state_bucket
+    bucket = local.state_bucket
     key    = "aws-multi-vpc/demo/compute/terraform.tfstate"
-    region = var.region
+    region = local.region
   }
 }
 
@@ -25,7 +43,7 @@ data "terraform_remote_state" "compute" {
 module "alb" {
   source = "../../../modules/alb"
 
-  name           = var.name
+  name           = local.name
   vpc_id         = local.network.vpc_a_id
   subnet_ids     = local.network.vpc_a_public_subnet_ids
   sg_id          = local.network.alb_sg_id
@@ -37,7 +55,7 @@ module "alb" {
 module "nlb" {
   source = "../../../modules/nlb"
 
-  name       = var.name
+  name       = local.name
   vpc_id     = local.network.vpc_a_id
   subnet_ids = local.network.vpc_a_public_subnet_ids
   alb_arn    = module.alb.alb_arn

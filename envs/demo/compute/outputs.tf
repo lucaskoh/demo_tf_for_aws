@@ -38,5 +38,5 @@ output "s3_object_urls" {
 
 output "kubeconfig_command" {
   description = "Run this to use kubectl against the cluster"
-  value       = "aws eks update-kubeconfig --region ${var.region} --name ${module.eks.cluster_name}"
+  value       = "aws eks update-kubeconfig --region ${local.region} --name ${module.eks.cluster_name}"
 }

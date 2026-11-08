@@ -1,0 +1,14 @@
+# Environment values come from ../values.yaml (shared by all layers).
+# Validation lives in the preconditions of data.aws_caller_identity.current.
+locals {
+  values = yamldecode(file("${path.module}/../values.yaml"))
+  common = local.values.common
+  config = local.values.compute
+
+  name         = local.common.name
+  region       = local.common.region
+  state_bucket = local.common.state_bucket
+
+  ec2_private_ip_override = local.config.ec2_private_ip
+  kubernetes_version      = local.config.kubernetes_version
+}

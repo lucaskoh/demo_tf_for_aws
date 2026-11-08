@@ -1,10 +1,5 @@
 locals {
-  tags = {
-    Project     = "aws-multi-vpc-terraform"
-    Environment = "demo"
-    ManagedBy   = "terraform"
-    Layer       = "edge"
-  }
+  tags = merge(local.common.tags, { Layer = "edge" })
 
   # Values published by the other layers
   network = data.terraform_remote_state.network.outputs
