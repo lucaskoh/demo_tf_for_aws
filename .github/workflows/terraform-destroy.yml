@@ -20,12 +20,14 @@ concurrency:
 
 env:
   TF_IN_AUTOMATION: "true"
+  # Referencing the secret makes the runner mask the account ID everywhere in the logs
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
   TF_VAR_record_name: ${{ vars.RECORD_NAME || 'demo' }}
-  TF_VAR_ci_plan_role_arn: ${{ vars.AWS_PLAN_ROLE_ARN }}
-  TF_VAR_ci_apply_role_arn: ${{ vars.AWS_APPLY_ROLE_ARN }}
+  TF_VAR_ci_plan_role_arn: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+  TF_VAR_ci_apply_role_arn: ${{ secrets.AWS_APPLY_ROLE_ARN }}
   # JSON list, e.g. ["arn:aws:iam::<account>:user/<name>"]; must be identical in plan, apply and destroy
-  TF_VAR_eks_admin_principal_arns: ${{ vars.EKS_ADMIN_PRINCIPAL_ARNS || '[]' }}
+  TF_VAR_eks_admin_principal_arns: ${{ secrets.EKS_ADMIN_PRINCIPAL_ARNS || '[]' }}
 
 jobs:
   destroy:
@@ -46,7 +48,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
       # Reverse of the apply order. workloads must go before compute: the

@@ -246,7 +246,7 @@ Without a domain, the host is the NLB DNS name (for example `demo-nlb-1234567890
 Configuration comes from two places:
 
 1. **`envs/demo/values.yaml`** holds the environment values and is shared by all layers. Each layer reads it with `yamldecode(file(...))` in its `values.tf`, and checks it with preconditions (for example the name format, valid and non-overlapping CIDRs, and the NodePort range). A new environment is a new values file.
-2. **Variables** hold the values that come from outside the repository: set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables.
+2. **Variables** hold the values that come from outside the repository: set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables and secrets.
 
 `backend.tf` cannot read `values.yaml` (backend blocks cannot use variables), so the state bucket and region are also hard-coded there. Keep them in sync with `common.state_bucket` and `common.region`.
 
@@ -269,8 +269,8 @@ Configuration comes from two places:
 | Layer | Variable | Default | Description |
 |---|---|---|---|
 | `compute` | `eks_admin_principal_arns` | `[]` | IAM users/roles with cluster-admin on EKS for local runs (the CI apply role is added automatically) |
-| `compute` | `ci_plan_role_arn` | `""` | CI plan role (read-only EKS access). Set by CI from `AWS_PLAN_ROLE_ARN` |
-| `compute` | `ci_apply_role_arn` | `""` | CI apply role (EKS admin). Set by CI from `AWS_APPLY_ROLE_ARN` |
+| `compute` | `ci_plan_role_arn` | `""` | CI plan role (read-only EKS access). Set by CI from the `AWS_PLAN_ROLE_ARN` secret |
+| `compute` | `ci_apply_role_arn` | `""` | CI apply role (EKS admin). Set by CI from the `AWS_APPLY_ROLE_ARN` secret |
 | `edge` | `domain_name` | `""` | Existing public Route 53 hosted zone, e.g. `example.com`. Empty = no DNS record; use the NLB DNS name |
 | `edge` | `record_name` | `demo` | Subdomain for the demo (`demo.example.com`). Only used when `domain_name` is set |
 
@@ -333,13 +333,21 @@ All layers run as steps of a single job, so one `production` approval covers the
 ### One-time setup
 
 1. Run `bootstrap/` locally (see [Quick Start](#quick-start)) and note the three outputs.
-2. In **Settings → Secrets and variables → Actions → Variables**, add:
+2. In **Settings → Secrets and variables → Actions**, add:
+
+   **Variables** (not sensitive):
 
    | Variable | Value |
    |---|---|
    | `AWS_REGION` | e.g. `ap-northeast-1`. Used to log in to AWS; must match `common.region` in `values.yaml` |
    | `DOMAIN_NAME` | *(optional)* your Route 53 zone, e.g. `example.com` |
    | `RECORD_NAME` | *(optional)* e.g. `demo` (defaults to `demo`) |
+
+   **Secrets** (they contain your AWS account ID; this repository is public and the workflow logs are visible to everyone, so secrets are masked in the logs):
+
+   | Secret | Value |
+   |---|---|
+   | `AWS_ACCOUNT_ID` | Your 12-digit AWS account ID. Referenced by the workflows so it is masked everywhere in the logs, and removed from the plan comment on the PR |
    | `AWS_PLAN_ROLE_ARN` | `plan_role_arn` output |
    | `AWS_APPLY_ROLE_ARN` | `apply_role_arn` output |
    | `EKS_ADMIN_PRINCIPAL_ARNS` | *(optional)* JSON list of IAM users/roles that get cluster-admin on EKS, e.g. `["arn:aws:iam::123456789012:user/your-user"]`. Without it, only the CI roles can see Kubernetes resources (for example in the EKS console). |
