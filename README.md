@@ -122,12 +122,14 @@ EKS nodes and the EC2 instance sit in public subnets (they need outbound interne
 
 Direct requests to a node's or the EC2 instance's public IP are dropped. The rules are generated from what is routed; nobody writes them by hand.
 
+**Why `alb-sg` accepts `0.0.0.0/0`:** the ALB is internal, so it only has private IP addresses and nothing on the internet can route to it. The only public entry point is the NLB. The rule therefore does not open the ALB to the internet: it only matters for traffic that is already inside VPC-A, or inside VPC-B through the peering. It is not limited to the VPC CIDR because the source address that the ALB sees when the NLB forwards to it (the NLB's own address or the original client's) has not been verified in this project; limiting it is a possible hardening step once that has been tested.
+
 ---
 
 ## Repository Layout
 
 ```
-aws-multi-vpc-terraform/
+demo_tf_for_aws/
 ├── README.md
 ├── LICENSE
 ├── .gitignore
@@ -188,13 +190,13 @@ Each folder under `layers/` is a complete root module with its own `backend.tf`,
 
 ```bash
 # 1. Clone
-git clone https://github.com/<your-username>/aws-multi-vpc-terraform.git
-cd aws-multi-vpc-terraform
+git clone https://github.com/<your-username>/demo_tf_for_aws.git
+cd demo_tf_for_aws
 
 # 2. (One time) create the state bucket and CI roles
 cd bootstrap
 terraform init
-terraform apply -var="github_repo=<your-username>/aws-multi-vpc-terraform"
+terraform apply -var="github_repo=<your-username>/demo_tf_for_aws"
 # note the outputs: state_bucket_name, plan_role_arn, apply_role_arn
 
 # 3. Put the bucket name into common.state_bucket of envs/demo/values.yaml, then deploy
@@ -464,8 +466,27 @@ All layers run as steps of a single job, so one `production` approval covers the
 
 - The **plan role** can only be assumed by `pull_request` jobs and has read-only access plus state access.
 - The **apply role** can only be assumed by jobs running in the `production` environment.
-- The demo apply role uses `AdministratorAccess` for simplicity. Replace it with a least-privilege policy for real use.
+- The demo apply role uses `AdministratorAccess` for simplicity. See [From demo to production: the apply role](#from-demo-to-production-the-apply-role) for how to replace it.
 - Plan comments only work for pull requests from the same repository (forks do not receive OIDC tokens).
+
+### From demo to production: the apply role
+
+What protects the apply role today is **who can assume it**, not what it can do:
+
+- No long-lived AWS keys exist in GitHub. Jobs get short-lived credentials through OIDC.
+- The apply role trusts only OIDC tokens whose subject is the `production` environment of this repository. That environment is limited to `main` and needs an approval, so a pull request or another branch cannot obtain the role.
+- The plan role is read-only (`ReadOnlyAccess`) and is only assumed by `pull_request` jobs.
+
+What it can do once assumed is **everything** (`AdministratorAccess`). For real use, replace that policy. A reasonable way to do it:
+
+1. **Start from what this code touches:** EC2 and VPC (VPC, subnets, route tables, peering, security groups, instances, launch templates), Elastic Load Balancing (ALB, NLB, target groups, listeners), Auto Scaling (target group attachment), EKS (cluster, node group, access entries), IAM (the EKS cluster and node roles), S3 (the assets bucket, and the state bucket), and optionally Route 53.
+2. **Generate, then review:** run an apply with the broad role, let IAM Access Analyzer generate a policy from the CloudTrail events, and remove what you do not need.
+3. **Scope by resource:** limit IAM actions to roles named `<name>-*`, S3 actions to the `<name>-assets-*` bucket and to the state key prefix `aws-multi-vpc/<environment>/*`, and use `aws:RequestedRegion` to pin the region.
+4. **Prevent privilege escalation:** allow `iam:PassRole` only for the EKS roles and only `iam:PassedToService` EKS/EC2, and require a permissions boundary (`iam:PermissionsBoundary`) on every role that Terraform creates.
+5. **One role per layer:** `network`, `compute`, `workloads` and `edge` need very different permissions (only `compute` needs IAM, only `edge` needs Route 53), and each can be limited to its own state key.
+6. **Keep the trust policy** as it is, and keep a separate approval for `destroy`.
+
+None of this is implemented here; it is the plan for turning the demo into something you would run for real.
 
 ### Known caveats
 
@@ -506,7 +527,7 @@ This project is a **learning / demo environment**, not a production blueprint.
 - **EC2 instances live in one subnet, so in one AZ.** No high availability for the instances.
 - **Only Deployments.** There is no StatefulSet, because the cluster has no EBS CSI driver (no persistent volumes).
 - **No allowlist for container images yet.** A workload can use any public image; restricting that is part of the planned guardrails.
-- **Broad CI permissions.** The apply role uses `AdministratorAccess` for simplicity.
+- **Broad CI permissions.** The apply role uses `AdministratorAccess` for simplicity (only jobs approved in the `production` environment can assume it). See [From demo to production: the apply role](#from-demo-to-production-the-apply-role).
 
 ---
 
@@ -527,7 +548,7 @@ make destroy-all   # edge -> workloads -> compute -> network, asks for confirmat
 ```bash
 # The bucket is not force-destroyed, so empty it first (including all versions)
 cd bootstrap
-terraform destroy -var="github_repo=<your-username>/aws-multi-vpc-terraform"
+terraform destroy -var="github_repo=<your-username>/demo_tf_for_aws"
 ```
 
 ---
