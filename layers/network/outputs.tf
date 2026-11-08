@@ -48,7 +48,7 @@ output "workloads" {
 }
 
 output "instances" {
-  description = "The EC2 instances from values.yaml, fully resolved: instance type (null = default), fixed private IP and routed paths"
+  description = "The EC2 instances from values.yaml, fully resolved: image template, instance type (null = default), fixed private IP and routed paths"
   value       = local.instances
 }
 

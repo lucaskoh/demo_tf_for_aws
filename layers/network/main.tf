@@ -46,6 +46,11 @@ data "aws_availability_zones" "available" {
     }
 
     precondition {
+      condition     = length(local.bad_templates) == 0
+      error_message = "Every instance needs 'template: <name>' with a template from templates/ec2/templates.yaml (${join(", ", keys(local.ec2_templates))}). Check: ${join(", ", local.bad_templates)}."
+    }
+
+    precondition {
       condition     = length(local.bad_targets) == 0
       error_message = "Each backend needs a path and exactly one target, either 'workload: <name>' or 'instance: <name>', that is declared under workloads: or instances:. Check: ${join(", ", local.bad_targets)}."
     }

@@ -15,6 +15,9 @@ locals {
   instances_raw = merge(try(local.values.instances, {}), {})
   backends_raw  = merge(try(local.values.backends, {}), {})
 
+  # EC2 image templates maintained by the platform team (templates/ec2/templates.yaml)
+  ec2_templates = yamldecode(file("${path.module}/../../templates/ec2/templates.yaml"))
+
   # Paths routed to each workload / instance
   paths_by_workload = { for w in keys(local.workloads_raw) : w => [for k, b in local.backends_raw : try(b.path, "") if try(b.workload, null) == w] }
   paths_by_instance = { for i in keys(local.instances_raw) : i => [for k, b in local.backends_raw : try(b.path, "") if try(b.instance, null) == i] }
@@ -39,6 +42,7 @@ locals {
   # Nginx instances in VPC-B, each with a fixed private IP inside the subnet (host 10-249)
   instances = {
     for k, i in local.instances_raw : k => {
+      template      = try(i.template, null)
       instance_type = try(i.instance_type, null) # null = compute.ec2_instance_type
       private_ip    = coalesce(try(i.private_ip, null), cidrhost(local.vpc_b_subnet_cidr, 10 + parseint(substr(md5(k), 0, 4), 16) % 240))
       paths         = local.paths_by_instance[k]
@@ -81,6 +85,9 @@ locals {
     for k in keys(local.backends) : k
     if !can(regex("^[a-z0-9-]+$", k)) || length("${local.name}-${k}-tg") > 32
   ]
+
+  # Every instance must name an image template that the platform provides
+  bad_templates = [for k, i in local.instances : k if i.template == null || !contains(keys(local.ec2_templates), coalesce(i.template, ""))]
 
   # A backend needs a path and exactly one existing target
   bad_targets = [

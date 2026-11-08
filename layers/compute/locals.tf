@@ -7,6 +7,9 @@ locals {
   # instances from values.yaml, resolved by the network layer
   instances = local.network.instances
 
+  # EC2 image templates maintained by the platform team
+  ec2_templates = yamldecode(file("${path.module}/../../templates/ec2/templates.yaml"))
+
   bucket_name = "${local.name}-assets-${data.aws_caller_identity.current.account_id}-${local.region}"
 
   # Who may administer / read the EKS cluster

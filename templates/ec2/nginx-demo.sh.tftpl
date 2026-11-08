@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euxo pipefail
+dnf install -y nginx
+# No-op for port 80 (the default); otherwise move the default server to http_port
+sed -i -E 's/^(\s*listen\s+(\[::\]:)?)80;/\1${http_port};/' /etc/nginx/nginx.conf
+%{ for p in paths ~}
+mkdir -p /usr/share/nginx/html/${p}
+cat > /usr/share/nginx/html/${p}/index.html <<'HTML'
+${page_html}
+HTML
+%{ endfor ~}
+systemctl enable --now nginx
