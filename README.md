@@ -151,14 +151,15 @@ aws-multi-vpc-terraform/
 │   ├── nlb/
 │   └── dns/
 └── envs/
-    └── demo/                 # one folder per layer; each is its own root module with its own state
+    └── demo/                 # each layer folder is its own root module with its own state
+        ├── values.yaml       # environment values shared by all layers
         ├── network/          # VPCs, peering, security groups
         ├── compute/          # S3 assets, EC2, EKS
         ├── workloads/        # Kubernetes Deployment + Service
         └── edge/             # ALB, NLB, Route 53
 ```
 
-Each layer folder is a complete root module with its own `backend.tf`, `versions.tf`, `main.tf` and `variables.tf`. `network`, `compute` and `edge` also have `providers.tf`, `locals.tf` and `outputs.tf`; `workloads` is smaller (its `providers.tf` configures the Kubernetes provider, and it has no outputs). `compute` and `edge` ship a `terraform.tfvars.example`.
+Each layer folder is a complete root module with its own `backend.tf`, `versions.tf`, `values.tf` (reads `../values.yaml`) and `main.tf`. `network`, `compute` and `edge` also have `providers.tf`, `locals.tf` and `outputs.tf`; `workloads` is smaller (its `providers.tf` configures the Kubernetes provider, and it has no outputs). `compute` and `edge` have a `variables.tf` for the values that come from GitHub variables, and ship a `terraform.tfvars.example`. `envs/demo/values.yaml` is shared by all layers.
 
 ---
 
@@ -185,7 +186,7 @@ terraform apply -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 # note the outputs: state_bucket_name, plan_role_arn, apply_role_arn
 
 # 3. Put the bucket name into the backend.tf of every layer (envs/demo/*/backend.tf)
-#    and into the state_bucket default of compute, workloads and edge, then deploy
+#    and into common.state_bucket of envs/demo/values.yaml, then deploy
 cd ..
 cp envs/demo/compute/terraform.tfvars.example envs/demo/compute/terraform.tfvars   # edit eks_admin_principal_arns
 cp envs/demo/edge/terraform.tfvars.example envs/demo/edge/terraform.tfvars         # optional: domain_name
@@ -242,39 +243,36 @@ Without a domain, the host is the NLB DNS name (for example `demo-nlb-1234567890
 
 ## Configuration
 
-Variables are per layer. Set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables.
+Configuration comes from two places:
 
-**`network`** (`envs/demo/network`)
+1. **`envs/demo/values.yaml`** holds the environment values and is shared by all layers. Each layer reads it with `yamldecode(file(...))` in its `values.tf`, and checks it with preconditions (for example the name format, valid and non-overlapping CIDRs, and the NodePort range). A new environment is a new values file.
+2. **Variables** hold the values that come from outside the repository: set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables.
 
-| Variable | Default | Description |
+`backend.tf` cannot read `values.yaml` (backend blocks cannot use variables), so the state bucket and region are also hard-coded there. Keep them in sync with `common.state_bucket` and `common.region`.
+
+**`values.yaml`**
+
+| Key | Default | Description |
 |---|---|---|
-| `region` | `ap-northeast-1` | AWS region |
-| `name` | `demo` | Name prefix for resources (1-20 chars: lowercase letters, digits, hyphens) |
-| `vpc_a_cidr` | `10.0.0.0/16` | CIDR of VPC-A |
-| `vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B |
-| `node_port` | `30080` | Kubernetes NodePort between the ALB and the EKS nodes. Published as an output; the other layers use that value |
+| `common.name` | `demo` | Name prefix for resources (1-20 chars: lowercase letters, digits, hyphens) |
+| `common.region` | `ap-northeast-1` | AWS region |
+| `common.state_bucket` | *(bucket name)* | State bucket, used to read the other layers' state |
+| `common.tags` | Project, Environment, ManagedBy | Default tags on every resource; each layer adds a `Layer` tag |
+| `network.vpc_a_cidr` | `10.0.0.0/16` | CIDR of VPC-A |
+| `network.vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B (must not overlap VPC-A) |
+| `network.node_port` | `30080` | Kubernetes NodePort between the ALB and the EKS nodes. Published as an output; the other layers use that value |
+| `compute.ec2_private_ip` | `null` | Fixed private IP of the EC2 instance. `null` = the `.100` address of the VPC-B subnet (`10.1.1.100`) |
+| `compute.kubernetes_version` | `null` | EKS version. `null` = the EKS default for new clusters |
 
-**`compute`** (`envs/demo/compute`)
+**Variables**
 
-| Variable | Default | Description |
-|---|---|---|
-| `region`, `name` | as above | Must match the `network` layer |
-| `state_bucket` | *(bucket name)* | State bucket, used to read the `network` state |
-| `ec2_private_ip` | `null` | Fixed private IP of the EC2 instance. `null` = the `.100` address of the VPC-B subnet (`10.1.1.100`) |
-| `kubernetes_version` | `null` | EKS version. `null` = the EKS default for new clusters |
-| `eks_admin_principal_arns` | `[]` | IAM users/roles with cluster-admin on EKS for local runs (the CI apply role is added automatically) |
-| `ci_plan_role_arn` | `""` | CI plan role (read-only EKS access). Set by CI from `AWS_PLAN_ROLE_ARN` |
-| `ci_apply_role_arn` | `""` | CI apply role (EKS admin). Set by CI from `AWS_APPLY_ROLE_ARN` |
-
-**`workloads`** (`envs/demo/workloads`): `region` and `state_bucket` only.
-
-**`edge`** (`envs/demo/edge`)
-
-| Variable | Default | Description |
-|---|---|---|
-| `region`, `name`, `state_bucket` | as above | Must match the other layers |
-| `domain_name` | `""` | Existing public Route 53 hosted zone, e.g. `example.com`. Empty = no DNS record; use the NLB DNS name |
-| `record_name` | `demo` | Subdomain for the demo (`demo.example.com`). Only used when `domain_name` is set |
+| Layer | Variable | Default | Description |
+|---|---|---|---|
+| `compute` | `eks_admin_principal_arns` | `[]` | IAM users/roles with cluster-admin on EKS for local runs (the CI apply role is added automatically) |
+| `compute` | `ci_plan_role_arn` | `""` | CI plan role (read-only EKS access). Set by CI from `AWS_PLAN_ROLE_ARN` |
+| `compute` | `ci_apply_role_arn` | `""` | CI apply role (EKS admin). Set by CI from `AWS_APPLY_ROLE_ARN` |
+| `edge` | `domain_name` | `""` | Existing public Route 53 hosted zone, e.g. `example.com`. Empty = no DNS record; use the NLB DNS name |
+| `edge` | `record_name` | `demo` | Subdomain for the demo (`demo.example.com`). Only used when `domain_name` is set |
 
 `domain_name` is optional. Set it to create the Route 53 alias record; leave it empty to skip DNS.
 
@@ -339,7 +337,7 @@ All layers run as steps of a single job, so one `production` approval covers the
 
    | Variable | Value |
    |---|---|
-   | `AWS_REGION` | e.g. `ap-northeast-1` |
+   | `AWS_REGION` | e.g. `ap-northeast-1`. Used to log in to AWS; must match `common.region` in `values.yaml` |
    | `DOMAIN_NAME` | *(optional)* your Route 53 zone, e.g. `example.com` |
    | `RECORD_NAME` | *(optional)* e.g. `demo` (defaults to `demo`) |
    | `AWS_PLAN_ROLE_ARN` | `plan_role_arn` output |
@@ -421,13 +419,13 @@ terraform destroy -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 
 ## Planned Architecture Changes
 
-> **Status:** items 1 and 2 are done (see [State layout](#state-layout)); items 3 to 5 are planned.
+> **Status:** items 1, 2, 3 and 5 are done (see [State layout](#state-layout) and [Configuration](#configuration)); item 4 is planned.
 
 1. ~~**Split state.**~~ *Done.* The single state file is replaced by four smaller ones, so a change in one area has a smaller blast radius and parts of the environment can be created or destroyed independently.
 2. ~~**Group by nature.**~~ *Done.* The code is grouped into `network`, `compute`, `workloads` and `edge`, each its own root module with its own state. Layers share values through `terraform_remote_state`; replacing that with SSM Parameters is a possible next step.
-3. **Drive configuration with `yamldecode`.** Read configuration from YAML files with `yamldecode(file(...))` instead of long lists of Terraform variables.
+3. ~~**Drive configuration with `yamldecode`.**~~ *Done.* Each layer reads `envs/demo/values.yaml` with `yamldecode(file(...))`; only values that come from GitHub variables remain Terraform variables.
 4. **Normalize the modules.** Except for the values a module genuinely needs to hard-code, every setting becomes a module input variable (with a `description`, a sensible default where possible, and a `validation` where a wrong value would fail late).
-5. **Add a `values.yaml`.** Keep the environment-specific values (CIDRs, instance types, sizes, names, and so on) in a `values.yaml` file, so the Terraform code stays generic and a new environment only needs a new values file.
+5. ~~**Add a `values.yaml`.**~~ *Done.* The environment-specific values live in `envs/demo/values.yaml`, so the Terraform code stays generic and a new environment only needs a new values file. More settings (instance types, sizes) move there as the modules are normalized (item 4).
 
 ---
 

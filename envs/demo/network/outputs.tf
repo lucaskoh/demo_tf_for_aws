@@ -44,7 +44,7 @@ output "ec2_sg_id" {
 
 output "node_port" {
   description = "NodePort between the ALB and the EKS nodes (single source of truth for all layers)"
-  value       = var.node_port
+  value       = local.node_port
 }
 
 output "peering_connection_id" {

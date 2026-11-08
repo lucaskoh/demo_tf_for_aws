@@ -21,7 +21,6 @@ concurrency:
 
 env:
   TF_IN_AUTOMATION: "true"
-  TF_VAR_region: ${{ vars.AWS_REGION }}
   TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
   TF_VAR_record_name: ${{ vars.RECORD_NAME || 'demo' }}
   TF_VAR_ci_plan_role_arn: ${{ vars.AWS_PLAN_ROLE_ARN }}
