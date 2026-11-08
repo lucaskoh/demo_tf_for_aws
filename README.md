@@ -33,8 +33,6 @@ Everything is provisioned with Terraform and can be created and destroyed in min
 - [Limitations](#limitations)
 - [Cleanup](#cleanup)
 - [Planned Architecture Changes](#planned-architecture-changes)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
 - [License](#license)
 
 ---
@@ -557,24 +555,6 @@ The goal is a small internal platform: the platform team owns the Terraform code
 - **SSM Parameters instead of `terraform_remote_state`** to share values between layers.
 
 ---
-
-## Roadmap
-
-- [ ] HTTPS with ACM
-- [ ] Private subnets + VPC endpoints as an alternative to public subnets
-- [ ] AWS Load Balancer Controller with Ingress instead of NodePort
-- [ ] CloudFront in front of S3 assets
-- [x] GitHub Actions: `fmt`, `validate`, `tflint`, `tfsec`, plan on PR, manual apply, manual destroy
-- [ ] Make `tfsec` findings blocking
-- [ ] Least-privilege policy for the apply role
-- [ ] Scheduled auto-destroy for the demo environment
-- [ ] Auto Scaling for the EC2 backend
-
----
-
-## Contributing
-
-Issues and pull requests are welcome. Please run `terraform fmt -recursive` and `terraform validate` before submitting.
 
 ## License
 
