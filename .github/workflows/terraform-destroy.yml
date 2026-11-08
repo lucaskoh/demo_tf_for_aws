@@ -52,33 +52,19 @@ jobs:
 
       # Reverse of the apply order. workloads must go before compute: the
       # kubernetes provider needs the cluster to still exist.
+      # Each layer is retried a few times: some deletions fail once because AWS
+      # finishes an earlier deletion asynchronously (see destroy-layer.sh).
       # A destroy plan still reads the remote state of the layers it depends on,
       # which is why network and compute are destroyed last.
 
       - name: destroy edge
-        working-directory: envs/demo/edge
-        run: |
-          terraform init -input=false
-          terraform plan -destroy -no-color -input=false -out=tfplan-destroy
-          terraform apply -no-color -input=false tfplan-destroy
+        run: bash .github/scripts/destroy-layer.sh envs/demo/edge
 
       - name: destroy workloads
-        working-directory: envs/demo/workloads
-        run: |
-          terraform init -input=false
-          terraform plan -destroy -no-color -input=false -out=tfplan-destroy
-          terraform apply -no-color -input=false tfplan-destroy
+        run: bash .github/scripts/destroy-layer.sh envs/demo/workloads
 
       - name: destroy compute
-        working-directory: envs/demo/compute
-        run: |
-          terraform init -input=false
-          terraform plan -destroy -no-color -input=false -out=tfplan-destroy
-          terraform apply -no-color -input=false tfplan-destroy
+        run: bash .github/scripts/destroy-layer.sh envs/demo/compute
 
       - name: destroy network
-        working-directory: envs/demo/network
-        run: |
-          terraform init -input=false
-          terraform plan -destroy -no-color -input=false -out=tfplan-destroy
-          terraform apply -no-color -input=false tfplan-destroy
+        run: bash .github/scripts/destroy-layer.sh envs/demo/network
