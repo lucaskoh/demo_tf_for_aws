@@ -133,7 +133,8 @@ aws-multi-vpc-terraform/
 │   │   ├── terraform-apply.yml     # manual: apply all layers in order
 │   │   └── terraform-destroy.yml   # manual: destroy all layers in reverse order
 │   └── scripts/
-│       └── plan-layers.sh          # plans every layer, skips layers whose upstream is not deployed
+│       ├── plan-layers.sh          # plans every layer, skips layers whose upstream is not deployed
+│       └── destroy-layer.sh        # destroys one layer, retrying a few times
 ├── assets/                   # images uploaded to S3 by Terraform
 │   ├── eks-logo.png
 │   └── ec2-logo.png
@@ -327,7 +328,7 @@ flowchart LR
 |---|---|---|
 | `terraform-plan.yml` | Pull request to `main` | Runs `fmt -check`, `validate` (all layers), `tflint`, `tfsec`, then plans every layer in order and posts (or updates) one PR comment with a section per layer. Layers whose upstream layers are not deployed yet are reported as skipped. Uses the read-only **plan role**. |
 | `terraform-apply.yml` | Manual (`workflow_dispatch`) | Plans and applies each layer in order (`network`, `compute`, `workloads`, `edge`) in the `production` environment. Must run from `main` and needs `production` approval. Merging does not deploy. Uses the **apply role**. |
-| `terraform-destroy.yml` | Manual (`workflow_dispatch`) | Destroys the layers in reverse order (`edge`, `workloads`, `compute`, `network`). Requires typing `destroy`, running from `main`, and `production` approval. |
+| `terraform-destroy.yml` | Manual (`workflow_dispatch`) | Destroys the layers in reverse order (`edge`, `workloads`, `compute`, `network`). Requires typing `destroy`, running from `main`, and `production` approval. Each layer is retried up to three times, because some deletions fail once while AWS finishes an earlier deletion asynchronously. |
 
 All layers run as steps of a single job, so one `production` approval covers the whole apply or destroy. (The apply role only trusts jobs in the `production` environment, so one job per layer would need one approval per layer.)
 
