@@ -88,7 +88,10 @@ flowchart TB
 | **ALB with `instance` target for EKS** | The Node Group's Auto Scaling Group is attached directly to the target group. This avoids installing the AWS Load Balancer Controller for a demo. |
 | **ALB with `ip` target for EC2** | Allows the ALB in VPC-A to target a private IP in the peered VPC-B. |
 | **Spot instances for EKS nodes** | Lowest-cost compute for a short-lived environment. |
-| **Modules + environments layout** | Reusable modules, with each environment composing them. Adding `staging` is a copy-and-edit operation. |
+| **Layers shared by all environments** | The Terraform code lives once in `layers/`; an environment is a folder with only a `values.yaml`. Adding `staging` means copying that folder and editing the values. |
+| **Routes are separate from what runs** | `workloads`, `instances` and `backends` are different sections of `values.yaml`. A backend is only a path that leads to a workload or an instance, so one workload can have several paths, and a workload nobody routes to stays inside the cluster. |
+| **Numbers are derived, not chosen** | NodePorts, EC2 private IPs and ALB priorities come from a hash of the name, so adding or removing something never changes the others. Security group rules are generated from what is routed. |
+| **EC2 instances come from image templates** | An instance names a template from `templates/ec2/` (AMI and boot script) maintained by the platform team; it cannot pick an arbitrary image or script. |
 
 ---
 
@@ -235,17 +238,17 @@ The Makefile wraps the common commands. Run `make help` to list them. The enviro
 
 ```bash
 # <host> is demo.<your-domain>, or the NLB DNS name if you did not set domain_name
-curl http://<host>/html1   # Hello from eks (EKS in VPC-A)
-curl http://<host>/html2   # Hello from ec2 (EC2 in VPC-B via VPC Peering)
-curl http://<host>/        # 404 with usage hint
+curl http://<host>/html1   # Hello from web (EKS in VPC-A)
+curl http://<host>/html2   # Hello from legacy (EC2 in VPC-B via VPC Peering)
+curl http://<host>/        # 404 that lists the routes
 ```
 
-The `edge` layer prints the URLs as outputs (`make output LAYER=edge`). With a domain:
+The `edge` layer prints the URL of each backend (keyed by backend name) as an output (`make output LAYER=edge`). With a domain:
 
 ```
 backend_urls = {
-  "ec2" = "http://demo.example.com/html2"
-  "eks" = "http://demo.example.com/html1"
+  "ec2-page" = "http://demo.example.com/html2"
+  "eks-page" = "http://demo.example.com/html1"
 }
 ```
 
@@ -257,7 +260,7 @@ Without a domain, the host is the NLB DNS name (for example `demo-nlb-1234567890
 
 Configuration comes from two places:
 
-1. **`envs/demo/values.yaml`** holds the environment values and is shared by all layers. Each layer reads it with `yamldecode(file(...))` in its `values.tf`, and checks it with preconditions (for example the name format, valid and non-overlapping CIDRs, and the NodePort range). A new environment is a new values file.
+1. **`envs/demo/values.yaml`** holds the environment values and is shared by all layers. Each layer reads it with `yamldecode(file(...))` in its `values.tf`, and checks it with preconditions (for example the name format, valid and non-overlapping CIDRs, and the workloads, instances and backends: targets, paths, ports and IPs). A new environment is a new values file.
 2. **Variables** hold the values that come from outside the repository: set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables and secrets.
 
 The layers use a partial S3 backend. `scripts/tf.sh` passes the bucket, region and state key to `terraform init` with `-backend-config`, taking the bucket and region from `common.state_bucket` and `common.region`, so `values.yaml` is the only place that has them. These two keys must stay flat under `common:` because the script reads them with `awk`, not with a YAML parser.
@@ -272,7 +275,7 @@ The layers use a partial S3 backend. `scripts/tf.sh` passes the bucket, region a
 | `common.tags` | Project, Environment, ManagedBy | Default tags on every resource; each layer adds a `Layer` tag |
 | `network.vpc_a_cidr` | `10.0.0.0/16` | CIDR of VPC-A |
 | `network.vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B (must not overlap VPC-A) |
-| `common.http_port` | `80` | Port of the NLB and ALB listeners, and of Nginx on the EC2 backend |
+| `common.http_port` | `80` | Port of the NLB and ALB listeners, and of Nginx on the EC2 instances |
 | `compute.ec2_instance_type` | `t3.micro` | Default instance type of the instances (an instance can override it) |
 | `compute.eks` | Spot `t3.small`/`t3a.small`, 1 node (max 2) | Node group: `instance_types`, `capacity_type`, `desired_size`, `min_size`, `max_size` |
 | `compute.kubernetes_version` | `null` | EKS version. `null` = the EKS default for new clusters |
@@ -332,6 +335,8 @@ Names are lowercase letters, digits and hyphens. `<common.name>-<backend name>-t
 
 The NodePort, the private IP and the priority are derived from the name with a hash, so adding or removing something never changes the numbers of the others. If two get the same number, `plan` fails with a message that names them; set the field on one of them. The network layer resolves everything once and publishes it as its `workloads`, `instances` and `backends` outputs; the other layers read those.
 
+An Auto Scaling Group can be attached to a limited number of target groups (10 by default), which limits the number of backends that point to workloads.
+
 ### EC2 image templates
 
 An instance cannot choose its own AMI or boot script. It must name an image template that the platform team provides in `templates/ec2/templates.yaml`:
@@ -349,67 +354,6 @@ nginx-demo:
 A template says which image to start from (the most recent AMI that matches) and what to run at boot. The user data file is a `templatefile()` template and receives `http_port`, `paths` (the URL paths routed to the instance) and `page_html`. The generic `ec2-instance` module requires an `image_template`; it does not know what runs on the instance. `plan` fails when an instance has no `template` or names one that does not exist.
 
 To add a template, the platform team adds an entry to `templates.yaml` and the user data file; no Terraform change is needed unless the template needs variables other than the three above.
-
-An Auto Scaling Group can be attached to a limited number of target groups (10 by default), which limits the number of backends that point to workloads.
-
-**Variables** hold the values that come from outside the repository: set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables and secrets.
-
-The layers use a partial S3 backend. `scripts/tf.sh` passes the bucket, region and state key to `terraform init` with `-backend-config`, taking the bucket and region from `common.state_bucket` and `common.region`, so `values.yaml` is the only place that has them. These two keys must stay flat under `common:` because the script reads them with `awk`, not with a YAML parser.
-
-**`values.yaml`**
-
-| Key | Default | Description |
-|---|---|---|
-| `common.name` | `demo` | Name prefix for resources (1-20 chars: lowercase letters, digits, hyphens) |
-| `common.region` | `ap-northeast-1` | AWS region |
-| `common.state_bucket` | *(bucket name)* | State bucket, used to read the other layers' state |
-| `common.tags` | Project, Environment, ManagedBy | Default tags on every resource; each layer adds a `Layer` tag |
-| `network.vpc_a_cidr` | `10.0.0.0/16` | CIDR of VPC-A |
-| `network.vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B (must not overlap VPC-A) |
-| `common.http_port` | `80` | Port of the NLB and ALB listeners, and of Nginx on the EC2 backend |
-| `compute.ec2_instance_type` | `t3.micro` | Default instance type of the ec2 backends (a backend can override it) |
-| `compute.eks` | Spot `t3.small`/`t3a.small`, 1 node (max 2) | Node group: `instance_types`, `capacity_type`, `desired_size`, `min_size`, `max_size` |
-| `compute.kubernetes_version` | `null` | EKS version. `null` = the EKS default for new clusters |
-
-### Backends
-
-A backend is something behind the load balancer. Declare each one under `backends:` in `values.yaml`; the platform creates the pods or instances, the target group, the route and the security group rules. The key is the backend name (lowercase letters, digits and hyphens; `<common.name>-<key>-tg` must fit in 32 characters).
-
-```yaml
-backends:
-  web:
-    type: eks            # a Kubernetes service on the EKS cluster
-    path: web            # served at /web (one URL segment)
-  api:
-    type: eks
-    path: api
-    image: hashicorp/http-echo:1.0   # your own image
-    container_port: 5678
-    health_check_path: /api
-    replicas: 2
-  legacy:
-    type: ec2            # Nginx on an EC2 instance in VPC-B (over the peering)
-    path: legacy
-    instance_type: t3.small
-```
-
-| Field | Applies to | Default | Description |
-|---|---|---|---|
-| `type` | all | *(required)* | `eks` or `ec2` |
-| `path` | all | *(required)* | URL path, without slashes. The ALB forwards `/<path>` and `/<path>/*` without rewriting, so a custom image must serve under that prefix |
-| `image` | eks | none | Container image. Without it the built-in Nginx demo page is served |
-| `container_port` | eks | `80` | Port the container listens on (the demo page needs `80`) |
-| `health_check_path` | all | `/<path>/index.html`; `/` for a custom image | Health check of the ALB and the readiness probe |
-| `replicas` | eks | `1` | Number of pods |
-| `node_port` | eks | derived from the name | NodePort (30000-32767) |
-| `private_ip` | ec2 | derived from the name | Fixed private IP inside the VPC-B subnet |
-| `instance_type` | ec2 | `compute.ec2_instance_type` | EC2 instance type |
-| `priority` | all | derived from the name | ALB rule priority (1-50000). Paths are different, so it only matters for overlapping prefixes |
-| `page_title`, `page_heading` | demo page | from type and name | Texts of the built-in demo page (no `<`, `>`, `"` or line breaks) |
-
-The NodePort, the private IP and the priority are derived from the backend name with a hash, so adding or removing a backend never changes the numbers of the others. If two backends happen to get the same number, `plan` fails with a message that names the backends; set the field on one of them. The network layer resolves all backends once and publishes them as its `backends` output; the other layers read that.
-
-An Auto Scaling Group can be attached to a limited number of target groups (10 by default), which limits the number of eks backends.
 
 **Variables**
 
@@ -548,7 +492,7 @@ Approximate, for `ap-northeast-1`, on-demand and Spot prices at the time of writ
 | VPC Peering (same region) | Free (data transfer charges may apply) |
 | **Total** | **~US$0.2 / hr, roughly US$0.4 for a 2-hour test** |
 
-Remember to run `terraform destroy` when you are done. Setting up an [AWS Budget](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html) alert is also recommended.
+Remember to destroy the environment when you are done (the Terraform Destroy workflow, or `make destroy-all`). Setting up an [AWS Budget](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html) alert is also recommended.
 
 ---
 
@@ -561,7 +505,9 @@ This project is a **learning / demo environment**, not a production blueprint.
 - **Public subnets for compute.** Chosen to avoid NAT Gateway cost. Production workloads should use private subnets.
 - **Public S3 bucket** for demo images. For production, use CloudFront with Origin Access Control.
 - **Spot nodes** can be reclaimed at any time.
-- **Single EC2 instance in a single AZ.** No high availability for `/html2`.
+- **EC2 instances live in one subnet, so in one AZ.** No high availability for the instances.
+- **Only Deployments.** There is no StatefulSet, because the cluster has no EBS CSI driver (no persistent volumes).
+- **No allowlist for container images yet.** A workload can use any public image; restricting that is part of the planned guardrails.
 - **Broad CI permissions.** The apply role uses `AdministratorAccess` for simplicity.
 
 ---
@@ -590,13 +536,25 @@ terraform destroy -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 
 ## Planned Architecture Changes
 
-> **Status:** items 1 to 5 are done (see [State layout](#state-layout) and [Configuration](#configuration)). The SSM Parameters step is a possible next one.
+The goal is a small internal platform: the platform team owns the Terraform code, the modules and the guardrails, and other people deploy by editing one `values.yaml`.
 
-1. ~~**Split state.**~~ *Done.* The single state file is replaced by four smaller ones, so a change in one area has a smaller blast radius and parts of the environment can be created or destroyed independently.
-2. ~~**Group by nature.**~~ *Done.* The code is grouped into `network`, `compute`, `workloads` and `edge`, each its own root module with its own state. Layers share values through `terraform_remote_state`; replacing that with SSM Parameters is a possible next step.
-3. ~~**Drive configuration with `yamldecode`.**~~ *Done.* Each layer reads `envs/<environment>/values.yaml` with `yamldecode(file(...))`; only values that come from GitHub variables remain Terraform variables.
-4. ~~**Normalize the modules.**~~ *Done.* Modules no longer know about this demo: there is one generic `security-group` module (instead of one that created the ALB, EKS and EC2 groups), and ports, paths, health checks, sizes and instance types are inputs (with a `description`, a default and a `validation` where a wrong value would fail late). The `alb` module takes a map of target groups. Except for the values a module genuinely needs to hard-code, every setting becomes a module input variable (with a `description`, a sensible default where possible, and a `validation` where a wrong value would fail late).
-5. ~~**Add a `values.yaml`.**~~ *Done.* The environment-specific values live in `envs/demo/values.yaml`, so the Terraform code stays generic and a new environment only needs a new values file. Ports, page paths, instance types and node group sizes are there too.
+**Done**
+
+1. **Split state.** One state per layer (`network`, `compute`, `workloads`, `edge`), so a change in one area has a smaller blast radius and parts of the environment can be created or destroyed independently.
+2. **Group by nature.** Each layer is its own root module. Layers share values through `terraform_remote_state`.
+3. **Drive configuration with `yamldecode`.** Each layer reads `envs/<environment>/values.yaml`; only values that come from GitHub variables and secrets remain Terraform variables.
+4. **Normalize the modules.** Modules do not know about this demo: one generic `security-group` module, and ports, paths, health checks, sizes and instance types are inputs with a `description`, a default and a `validation` where a wrong value would fail late.
+5. **Add a `values.yaml`.** The environment-specific values live in `envs/<environment>/values.yaml`.
+6. **Environments are values-only.** The layer code is shared; a new environment is a new folder under `envs/` (see [Environments](#environments)).
+7. **Declare what runs and how it is routed.** `workloads`, `instances` and `backends` in `values.yaml`; the platform creates the rest and rejects mistakes in `plan` (see [Workloads, instances and backends](#workloads-instances-and-backends)).
+8. **EC2 image templates.** Instances must use a template provided by the platform team (see [EC2 image templates](#ec2-image-templates)).
+
+**Planned**
+
+- **Validate `values.yaml` in CI** against a schema, so a wrong field is caught in the pull request with a clear message.
+- **Separate who may change what.** `CODEOWNERS` for the platform code (`layers/`, `modules/`, `templates/`) and for each environment folder, versioned platform code, and an allowlist for container images.
+- **Optional components.** Switches such as `eks.enabled` or `dns.enabled`, with checks for combinations that make no sense.
+- **SSM Parameters instead of `terraform_remote_state`** to share values between layers.
 
 ---
 
