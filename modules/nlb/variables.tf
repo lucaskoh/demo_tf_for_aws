@@ -58,6 +58,17 @@ variable "health_check" {
   default = {}
 }
 
+variable "deregistration_wait" {
+  description = "Time to wait on destroy between removing the ALB from the NLB target group and the next deletion (the ALB listener). AWS finishes the deregistration asynchronously, and deleting the listener too early fails with ResourceInUse. Duration such as 60s."
+  type        = string
+  default     = "60s"
+
+  validation {
+    condition     = can(regex("^[0-9]+(s|m|h)$", var.deregistration_wait))
+    error_message = "deregistration_wait must be a duration such as 60s or 2m."
+  }
+}
+
 variable "tags" {
   description = "Extra tags applied to every resource"
   type        = map(string)

@@ -28,10 +28,26 @@ resource "aws_lb_target_group" "alb" {
   tags = merge(var.tags, { Name = "${var.name}-alb-tg" })
 }
 
+# Only does something on destroy. Resources are destroyed in the reverse order of
+# their dependencies, so the order here is:
+#   attachment (ALB leaves the NLB target group) -> this wait -> ALB listener.
+# The wait depends on the ALB listener through var.alb_arn (the ALB module's
+# alb_arn output waits for its listener). The attachment depends on the wait.
+resource "time_sleep" "alb_deregistration" {
+  destroy_duration = var.deregistration_wait
+
+  triggers = {
+    alb_arn = var.alb_arn
+  }
+}
+
 resource "aws_lb_target_group_attachment" "alb" {
   target_group_arn = aws_lb_target_group.alb.arn
   target_id        = var.alb_arn
   port             = var.target_port
+
+  # Must be created after the wait, so it is destroyed before it (see above)
+  depends_on = [time_sleep.alb_deregistration]
 }
 
 resource "aws_lb_listener" "this" {
