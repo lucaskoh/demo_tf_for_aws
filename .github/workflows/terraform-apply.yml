@@ -20,6 +20,8 @@ env:
   TF_VAR_record_name: ${{ vars.RECORD_NAME || 'demo' }}
   TF_VAR_ci_plan_role_arn: ${{ vars.AWS_PLAN_ROLE_ARN }}
   TF_VAR_ci_apply_role_arn: ${{ vars.AWS_APPLY_ROLE_ARN }}
+  # JSON list, e.g. ["arn:aws:iam::<account>:user/<name>"]; must be identical in plan, apply and destroy
+  TF_VAR_eks_admin_principal_arns: ${{ vars.EKS_ADMIN_PRINCIPAL_ARNS || '[]' }}
 
 jobs:
   apply:
