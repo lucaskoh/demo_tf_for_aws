@@ -28,6 +28,7 @@ Everything is provisioned with Terraform and can be created and destroyed in min
 - [Cost Estimate](#cost-estimate)
 - [Limitations](#limitations)
 - [Cleanup](#cleanup)
+- [Planned Architecture Changes](#planned-architecture-changes)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
@@ -377,6 +378,18 @@ terraform destroy
 cd bootstrap
 terraform destroy -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 ```
+
+---
+
+## Planned Architecture Changes
+
+> **Status: planned, not implemented yet.** The repository currently has a single root module (`envs/demo`) with a single state file. The next iteration restructures it as follows.
+
+1. **Split state.** Replace the single state file with several smaller ones, so a change in one area has a smaller blast radius, plans are faster, and parts of the environment can be created or destroyed independently.
+2. **Group by nature.** Organize the Terraform code into folders by the kind of resources they manage (for example network, compute, and edge) instead of one flat root module. Each folder is its own root module with its own state.
+3. **Drive configuration with `yamldecode`.** Read configuration from YAML files with `yamldecode(file(...))` instead of long lists of Terraform variables.
+4. **Normalize the modules.** Except for the values a module genuinely needs to hard-code, every setting becomes a module input variable (with a `description`, a sensible default where possible, and a `validation` where a wrong value would fail late).
+5. **Add a `values.yaml`.** Keep the environment-specific values (CIDRs, instance types, sizes, names, and so on) in a `values.yaml` file, so the Terraform code stays generic and a new environment only needs a new values file.
 
 ---
 
