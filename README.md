@@ -343,6 +343,7 @@ All layers run as steps of a single job, so one `production` approval covers the
    | `RECORD_NAME` | *(optional)* e.g. `demo` (defaults to `demo`) |
    | `AWS_PLAN_ROLE_ARN` | `plan_role_arn` output |
    | `AWS_APPLY_ROLE_ARN` | `apply_role_arn` output |
+   | `EKS_ADMIN_PRINCIPAL_ARNS` | *(optional)* JSON list of IAM users/roles that get cluster-admin on EKS, e.g. `["arn:aws:iam::123456789012:user/your-user"]`. Without it, only the CI roles can see Kubernetes resources (for example in the EKS console). |
 
 3. In **Settings → Environments**, create `production`, add **Required reviewers**, and restrict **Deployment branches** to `main`.
 4. In **Settings → Branches**, protect `main`: require a pull request, require the `validate` and `plan` checks to pass, and block direct pushes.
