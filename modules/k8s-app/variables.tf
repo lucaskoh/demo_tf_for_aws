@@ -32,12 +32,13 @@ variable "service_port" {
 }
 
 variable "node_port" {
-  description = "NodePort exposed on every worker node (the ALB target port)"
+  description = "NodePort exposed on every worker node (the ALB target port). null = the Service is a ClusterIP, reachable inside the cluster only."
   type        = number
+  default     = null
 
   validation {
-    condition     = var.node_port >= 30000 && var.node_port <= 32767
-    error_message = "node_port must be between 30000 and 32767."
+    condition     = var.node_port == null || (var.node_port >= 30000 && var.node_port <= 32767)
+    error_message = "node_port must be null or between 30000 and 32767."
   }
 }
 
@@ -69,10 +70,10 @@ variable "resources" {
 }
 
 variable "static_file" {
-  description = "Optional file mounted into the container from a ConfigMap (for example the demo page). mount_path is the full path of the file inside the container. null = run the image as it is."
+  description = "Optional file mounted into the container from a ConfigMap (for example the demo page). The same content is mounted at every path in mount_paths (full paths of the file inside the container). null = run the image as it is."
   type = object({
-    mount_path = string
-    content    = string
+    mount_paths = list(string)
+    content     = string
   })
   default = null
 }

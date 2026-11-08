@@ -39,27 +39,37 @@ compute:
   # EKS Kubernetes version, e.g. "1.33" (quote it). null = the EKS default for new clusters.
   kubernetes_version: null
 
-# The backends behind the load balancer. Declare each one here; the platform creates
-# the pods or instances, the target groups, the routes and the security group rules.
-# The key is the backend name (lowercase letters, digits, hyphens; it is part of
-# resource names, and "<common.name>-<key>-tg" must fit in 32 characters).
-backends:
-  eks:
-    type: eks # a Kubernetes service on the EKS cluster
-    path: html1 # served at /html1 (one URL segment; the app must serve under this prefix)
-    # Optional. Without "image" the built-in Nginx demo page is served.
+# What runs, and how traffic reaches it. Names are lowercase letters, digits and hyphens.
+
+# Deployments on the EKS cluster. Only the ones that a backend routes to get a NodePort
+# and security group rules; the others are reachable inside the cluster only.
+workloads:
+  web:
+    # Optional. Without "image" the built-in Nginx demo page is served at the routed path(s).
     #   image: nginx:1.27-alpine
-    #   container_port: 80
-    #   health_check_path: /           # demo page: /<path>/index.html
+    #   container_port: 80             # the demo page needs 80
     #   replicas: 1
+    #   health_check_path: /           # readiness probe
     #   node_port: 30080               # derived from the name when not set (30000-32767)
-    #   priority: 10                   # ALB rule priority, derived from the name when not set
     #   page_title / page_heading      # texts of the demo page
-  ec2:
-    type: ec2 # Nginx on an EC2 instance in VPC-B, reached over the VPC peering
-    path: html2
+
+# Nginx instances in VPC-B, reached over the VPC peering.
+instances:
+  legacy:
     # Optional:
     #   instance_type: t3.micro        # default: compute.ec2_instance_type
     #   private_ip: 10.1.1.100         # derived from the name when not set
-    #   priority: 20
     #   page_title / page_heading
+
+# Routes on the ALB: a path that leads to one workload or one instance.
+# "<common.name>-<backend name>-tg" must fit in 32 characters.
+backends:
+  eks-page:
+    path: html1 # served at /html1 (one URL segment; the app must serve under this prefix)
+    workload: web
+    # Optional:
+    #   health_check_path: /html1/index.html   # ALB health check (default: demo page, or / for a custom image)
+    #   priority: 10                           # derived from the name when not set
+  ec2-page:
+    path: html2
+    instance: legacy

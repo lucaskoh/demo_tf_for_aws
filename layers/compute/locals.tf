@@ -4,8 +4,8 @@ locals {
   # Values published by the network layer
   network = data.terraform_remote_state.network.outputs
 
-  # ec2 backends from values.yaml, resolved by the network layer
-  ec2_backends = { for k, b in local.network.backends : k => b if b.type == "ec2" }
+  # instances from values.yaml, resolved by the network layer
+  instances = local.network.instances
 
   bucket_name = "${local.name}-assets-${data.aws_caller_identity.current.account_id}-${local.region}"
 

@@ -53,15 +53,15 @@ module "alb" {
     message_body = "Not found. Try: ${join(", ", [for k, b in local.network.backends : "/${b.path} (${k})"])}"
   }
 
-  # One target group and route per backend. eks backends are instance targets on
-  # their NodePort (the nodes of the Auto Scaling Group); ec2 backends are IP
-  # targets in the peered VPC-B.
+  # One target group and route per backend. A workload is reached on its NodePort
+  # (instance targets: the nodes of the Auto Scaling Group); an instance is an IP
+  # target in the peered VPC-B.
   target_groups = {
     for k, b in local.network.backends : k => {
-      port                   = b.type == "eks" ? b.node_port : local.http_port
-      target_type            = b.type == "eks" ? "instance" : "ip"
-      autoscaling_group_name = b.type == "eks" ? local.compute.eks_node_group_asg_name : null
-      ip_targets             = b.type == "ec2" ? [local.compute.ec2_private_ips[k]] : []
+      port                   = b.workload != null ? b.node_port : local.http_port
+      target_type            = b.workload != null ? "instance" : "ip"
+      autoscaling_group_name = b.workload != null ? local.compute.eks_node_group_asg_name : null
+      ip_targets             = b.instance != null ? [local.compute.ec2_private_ips[b.instance]] : []
       path_patterns          = ["/${b.path}", "/${b.path}/*"]
       priority               = b.priority
       health_check           = { path = b.health_check_path }
