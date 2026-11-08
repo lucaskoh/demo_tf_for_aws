@@ -4,7 +4,8 @@ locals {
   # Values published by the network layer
   network = data.terraform_remote_state.network.outputs
 
-  ec2_private_ip = coalesce(local.ec2_private_ip_override, cidrhost(local.network.vpc_b_subnet_cidr, 100))
+  # ec2 backends from values.yaml, resolved by the network layer
+  ec2_backends = { for k, b in local.network.backends : k => b if b.type == "ec2" }
 
   bucket_name = "${local.name}-assets-${data.aws_caller_identity.current.account_id}-${local.region}"
 

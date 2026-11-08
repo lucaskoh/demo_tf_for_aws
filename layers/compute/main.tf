@@ -15,11 +15,6 @@ data "aws_caller_identity" "current" {
       condition     = length(local.state_bucket) > 0
       error_message = "common.state_bucket in values.yaml must not be empty."
     }
-
-    precondition {
-      condition     = local.ec2_private_ip_override == null || can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}$", local.ec2_private_ip_override))
-      error_message = "compute.ec2_private_ip in values.yaml must be null or an IPv4 address."
-    }
   }
 }
 
@@ -44,17 +39,25 @@ module "s3_assets" {
   }
 }
 
+# One instance per ec2 backend (the numbers come from the network layer)
 module "ec2" {
-  source = "../../modules/ec2-nginx"
+  source   = "../../modules/ec2-nginx"
+  for_each = local.ec2_backends
 
-  name               = "${local.name}-vpc-b-nginx"
+  name               = "${local.name}-${each.key}"
   subnet_id          = local.network.vpc_b_public_subnet_ids_by_key["b-1"]
-  private_ip         = local.ec2_private_ip
+  private_ip         = each.value.private_ip
   security_group_ids = [local.network.ec2_sg_id]
-  image_url          = module.s3_assets.object_urls["ec2-logo.png"]
-  instance_type      = local.ec2_instance_type
+  instance_type      = coalesce(each.value.instance_type, local.ec2_instance_type)
   http_port          = local.http_port
-  path_prefix        = local.ec2_path
+  path_prefix        = each.value.path
+
+  page_html = trimspace(templatefile("${path.module}/../../templates/demo-page.html.tftpl", {
+    title     = each.value.page_title
+    heading   = each.value.page_heading
+    image_url = module.s3_assets.object_urls["ec2-logo.png"]
+    image_alt = "EC2 logo"
+  }))
 }
 
 module "eks" {

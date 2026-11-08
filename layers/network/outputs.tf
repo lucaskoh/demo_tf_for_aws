@@ -42,9 +42,9 @@ output "ec2_sg_id" {
   value       = module.sg_ec2.security_group_id
 }
 
-output "node_port" {
-  description = "NodePort between the ALB and the EKS nodes (single source of truth for all layers)"
-  value       = local.node_port
+output "backends" {
+  description = "The backends from values.yaml, fully resolved (single source of truth for all layers): type, path, priority, node_port or private_ip, image, ports, health check path and page texts"
+  value       = local.backends
 }
 
 output "peering_connection_id" {

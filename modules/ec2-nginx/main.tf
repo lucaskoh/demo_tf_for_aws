@@ -14,8 +14,6 @@ data "aws_ami" "al2023" {
 }
 
 locals {
-  index_html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>${var.page_title}</title></head><body><h1>${var.page_heading}</h1><img src=\"${var.image_url}\" alt=\"${var.image_alt}\" width=\"200\"></body></html>"
-
   user_data = <<-EOT
     #!/bin/bash
     set -euxo pipefail
@@ -24,7 +22,7 @@ locals {
     sed -i -E 's/^(\s*listen\s+(\[::\]:)?)80;/\1${var.http_port};/' /etc/nginx/nginx.conf
     mkdir -p /usr/share/nginx/html/${var.path_prefix}
     cat > /usr/share/nginx/html/${var.path_prefix}/index.html <<'HTML'
-    ${local.index_html}
+    ${var.page_html}
     HTML
     systemctl enable --now nginx
   EOT

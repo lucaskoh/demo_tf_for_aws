@@ -8,6 +8,4 @@ locals {
   region       = local.common.region
   state_bucket = local.common.state_bucket
   http_port    = local.common.http_port
-  eks_path     = local.common.app_paths.eks
-  ec2_path     = local.common.app_paths.ec2
 }

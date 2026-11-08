@@ -21,17 +21,11 @@ common:
     ManagedBy: terraform
   # Port of the NLB and ALB listeners, and of Nginx on the EC2 backend
   http_port: 80
-  # Path (without slashes) of each demo page: /<path> on the ALB, and the folder Nginx serves it from
-  app_paths:
-    eks: html1
-    ec2: html2
 
 network:
   # VPC CIDRs must not overlap (subnets are derived from them: /16 -> /24)
   vpc_a_cidr: 10.0.0.0/16 # NLB, ALB, EKS
   vpc_b_cidr: 10.1.0.0/16 # EC2
-  # Kubernetes NodePort between the ALB and the EKS nodes (30000-32767)
-  node_port: 30080
 
 compute:
   ec2_instance_type: t3.micro
@@ -42,7 +36,30 @@ compute:
     desired_size: 1
     min_size: 1
     max_size: 2
-  # Fixed private IP of the EC2 instance. null = the .100 address of the VPC-B subnet.
-  ec2_private_ip: null
   # EKS Kubernetes version, e.g. "1.33" (quote it). null = the EKS default for new clusters.
   kubernetes_version: null
+
+# The backends behind the load balancer. Declare each one here; the platform creates
+# the pods or instances, the target groups, the routes and the security group rules.
+# The key is the backend name (lowercase letters, digits, hyphens; it is part of
+# resource names, and "<common.name>-<key>-tg" must fit in 32 characters).
+backends:
+  eks:
+    type: eks # a Kubernetes service on the EKS cluster
+    path: html1 # served at /html1 (one URL segment; the app must serve under this prefix)
+    # Optional. Without "image" the built-in Nginx demo page is served.
+    #   image: nginx:1.27-alpine
+    #   container_port: 80
+    #   health_check_path: /           # demo page: /<path>/index.html
+    #   replicas: 1
+    #   node_port: 30080               # derived from the name when not set (30000-32767)
+    #   priority: 10                   # ALB rule priority, derived from the name when not set
+    #   page_title / page_heading      # texts of the demo page
+  ec2:
+    type: ec2 # Nginx on an EC2 instance in VPC-B, reached over the VPC peering
+    path: html2
+    # Optional:
+    #   instance_type: t3.micro        # default: compute.ec2_instance_type
+    #   private_ip: 10.1.1.100         # derived from the name when not set
+    #   priority: 20
+    #   page_title / page_heading

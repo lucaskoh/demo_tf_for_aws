@@ -24,11 +24,6 @@ variable "instance_type" {
   default     = "t3.micro"
 }
 
-variable "image_url" {
-  description = "Public URL of the image shown on the page (S3 object URL)"
-  type        = string
-}
-
 variable "ami_name_pattern" {
   description = "Name pattern of the Amazon AMI to use (the most recent match is picked)"
   type        = string
@@ -67,7 +62,6 @@ variable "http_port" {
 variable "path_prefix" {
   description = "Path (without slashes) under which the page is served, e.g. html2 -> /html2/index.html"
   type        = string
-  default     = "html2"
 
   validation {
     condition     = can(regex("^[A-Za-z0-9._-]+$", var.path_prefix))
@@ -75,22 +69,14 @@ variable "path_prefix" {
   }
 }
 
-variable "page_title" {
-  description = "HTML title of the page"
+variable "page_html" {
+  description = "HTML of the page served at /<path_prefix>/index.html. Must be a single line (it is written from user_data)."
   type        = string
-  default     = "EC2"
-}
 
-variable "page_heading" {
-  description = "Heading shown on the page"
-  type        = string
-  default     = "Hello from EC2 (VPC-B via VPC Peering)"
-}
-
-variable "image_alt" {
-  description = "Alt text of the image on the page"
-  type        = string
-  default     = "EC2 logo"
+  validation {
+    condition     = !can(regex("[\\n\\r]", var.page_html))
+    error_message = "page_html must be a single line."
+  }
 }
 
 variable "tags" {

@@ -34,14 +34,31 @@ data "terraform_remote_state" "compute" {
 locals {
   network = data.terraform_remote_state.network.outputs
   compute = data.terraform_remote_state.compute.outputs
+
+  eks_backends = { for k, b in local.network.backends : k => b if b.type == "eks" }
 }
 
-module "k8s_nginx" {
-  source = "../../modules/k8s-nginx"
+# One Deployment + Service per eks backend (the numbers come from the network layer)
+module "app" {
+  source   = "../../modules/k8s-app"
+  for_each = local.eks_backends
 
-  image_url = local.compute.s3_object_urls["eks-logo.png"]
-  node_port = local.network.node_port
+  # "app-" avoids clashes with built-in objects such as the "kubernetes" Service
+  name              = "app-${each.key}"
+  image             = coalesce(each.value.image, "nginx:1.27-alpine")
+  container_port    = each.value.container_port
+  node_port         = each.value.node_port
+  replicas          = each.value.replicas
+  health_check_path = each.value.health_check_path
 
-  name        = "nginx-${local.eks_path}"
-  path_prefix = local.eks_path
+  # No image: serve the built-in demo page with Nginx
+  static_file = each.value.image == null ? {
+    mount_path = "/usr/share/nginx/html/${each.value.path}/index.html"
+    content = trimspace(templatefile("${path.module}/../../templates/demo-page.html.tftpl", {
+      title     = each.value.page_title
+      heading   = each.value.page_heading
+      image_url = local.compute.s3_object_urls["eks-logo.png"]
+      image_alt = "EKS logo"
+    }))
+  } : null
 }
