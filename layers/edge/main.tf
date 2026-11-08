@@ -1,7 +1,7 @@
 data "terraform_remote_state" "network" {
   backend = "s3"
 
-  # Checks for the values read from ../values.yaml (see values.tf)
+  # Checks for the values read from envs/<environment>/values.yaml (see values.tf)
   lifecycle {
     precondition {
       condition     = length(local.region) > 0
@@ -21,7 +21,7 @@ data "terraform_remote_state" "network" {
 
   config = {
     bucket = local.state_bucket
-    key    = "aws-multi-vpc/demo/network/terraform.tfstate"
+    key    = "aws-multi-vpc/${var.environment}/network/terraform.tfstate"
     region = local.region
   }
 }
@@ -31,7 +31,7 @@ data "terraform_remote_state" "compute" {
 
   config = {
     bucket = local.state_bucket
-    key    = "aws-multi-vpc/demo/compute/terraform.tfstate"
+    key    = "aws-multi-vpc/${var.environment}/compute/terraform.tfstate"
     region = local.region
   }
 }
@@ -41,7 +41,7 @@ data "terraform_remote_state" "compute" {
 # The EC2 target is only reachable once the VPC peering routes exist; that is
 # guaranteed by the apply order (the network layer is applied first).
 module "alb" {
-  source = "../../../modules/alb"
+  source = "../../modules/alb"
 
   name          = local.name
   vpc_id        = local.network.vpc_a_id
@@ -77,7 +77,7 @@ module "alb" {
 }
 
 module "nlb" {
-  source = "../../../modules/nlb"
+  source = "../../modules/nlb"
 
   name          = local.name
   vpc_id        = local.network.vpc_a_id
@@ -90,7 +90,7 @@ module "nlb" {
 # Optional: only created when domain_name is set
 module "dns" {
   count  = local.dns_enabled ? 1 : 0
-  source = "../../../modules/dns"
+  source = "../../modules/dns"
 
   zone_name      = var.domain_name
   record_name    = var.record_name

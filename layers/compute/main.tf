@@ -1,5 +1,5 @@
 data "aws_caller_identity" "current" {
-  # Checks for the values read from ../values.yaml (see values.tf)
+  # Checks for the values read from envs/<environment>/values.yaml (see values.tf)
   lifecycle {
     precondition {
       condition     = length(local.region) > 0
@@ -28,24 +28,24 @@ data "terraform_remote_state" "network" {
 
   config = {
     bucket = local.state_bucket
-    key    = "aws-multi-vpc/demo/network/terraform.tfstate"
+    key    = "aws-multi-vpc/${var.environment}/network/terraform.tfstate"
     region = local.region
   }
 }
 
 module "s3_assets" {
-  source = "../../../modules/s3-assets"
+  source = "../../modules/s3-assets"
 
   bucket_name = local.bucket_name
 
   files = {
-    "eks-logo.png" = "${path.root}/../../../assets/eks-logo.png"
-    "ec2-logo.png" = "${path.root}/../../../assets/ec2-logo.png"
+    "eks-logo.png" = "${path.root}/../../assets/eks-logo.png"
+    "ec2-logo.png" = "${path.root}/../../assets/ec2-logo.png"
   }
 }
 
 module "ec2" {
-  source = "../../../modules/ec2-nginx"
+  source = "../../modules/ec2-nginx"
 
   name               = "${local.name}-vpc-b-nginx"
   subnet_id          = local.network.vpc_b_public_subnet_ids_by_key["b-1"]
@@ -58,7 +58,7 @@ module "ec2" {
 }
 
 module "eks" {
-  source = "../../../modules/eks"
+  source = "../../modules/eks"
 
   cluster_name         = "${local.name}-eks"
   kubernetes_version   = local.kubernetes_version

@@ -9,22 +9,24 @@
 # Every attempt plans again, because a saved plan is stale once part of the
 # layer has been destroyed.
 #
-# Usage: destroy-layer.sh <layer-dir>
+# Usage: destroy-layer.sh <environment> <layer>
 # Environment: ATTEMPTS (default 3), RETRY_WAIT seconds (default 30)
 
 set -uo pipefail
 
-dir="${1:?usage: destroy-layer.sh <layer-dir>}"
+env_name="${1:?usage: destroy-layer.sh <environment> <layer>}"
+layer="${2:?usage: destroy-layer.sh <environment> <layer>}"
+TF="scripts/tf.sh $env_name"
 attempts="${ATTEMPTS:-3}"
 wait_seconds="${RETRY_WAIT:-30}"
 
-terraform -chdir="$dir" init -input=false || exit 1
+$TF "$layer" init -input=false || exit 1
 
 for attempt in $(seq 1 "$attempts"); do
-  echo "==> destroy $dir (attempt $attempt/$attempts)"
+  echo "==> destroy $env_name/$layer (attempt $attempt/$attempts)"
 
-  if terraform -chdir="$dir" plan -destroy -no-color -input=false -out=tfplan-destroy &&
-    terraform -chdir="$dir" apply -no-color -input=false tfplan-destroy; then
+  if $TF "$layer" plan -destroy -no-color -input=false -out=tfplan-destroy &&
+    $TF "$layer" apply -no-color -input=false tfplan-destroy; then
     exit 0
   fi
 
@@ -34,5 +36,5 @@ for attempt in $(seq 1 "$attempts"); do
   fi
 done
 
-echo "Destroy of $dir failed after $attempts attempts" >&2
+echo "Destroy of $env_name/$layer failed after $attempts attempts" >&2
 exit 1

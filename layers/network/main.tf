@@ -6,7 +6,7 @@ data "aws_availability_zones" "available" {
     values = ["opt-in-not-required"]
   }
 
-  # Checks for the values read from ../values.yaml (see values.tf)
+  # Checks for the values read from envs/<environment>/values.yaml (see values.tf)
   lifecycle {
     precondition {
       condition     = length(local.region) > 0
@@ -41,7 +41,7 @@ data "aws_availability_zones" "available" {
 }
 
 module "vpc_a" {
-  source = "../../../modules/vpc"
+  source = "../../modules/vpc"
 
   name       = "${local.name}-vpc-a"
   cidr_block = local.vpc_a_cidr
@@ -53,7 +53,7 @@ module "vpc_a" {
 }
 
 module "vpc_b" {
-  source = "../../../modules/vpc"
+  source = "../../modules/vpc"
 
   name       = "${local.name}-vpc-b"
   cidr_block = local.vpc_b_cidr
@@ -64,7 +64,7 @@ module "vpc_b" {
 }
 
 module "peering" {
-  source = "../../../modules/vpc-peering"
+  source = "../../modules/vpc-peering"
 
   name        = "${local.name}-vpc-a-to-vpc-b"
   vpc_a_id    = module.vpc_a.vpc_id
@@ -78,7 +78,7 @@ module "peering" {
 # The ALB and the EKS nodes reference each other, so the rules are passed in
 # after the groups exist (rules are separate resources inside the module).
 module "sg_alb" {
-  source = "../../../modules/security-group"
+  source = "../../modules/security-group"
 
   name        = "${local.name}-alb-sg"
   description = "ALB: HTTP in from clients, out only to the backends"
@@ -112,7 +112,7 @@ module "sg_alb" {
 # Attach this IN ADDITION to the EKS cluster security group.
 # The cluster SG keeps node <-> control plane / node <-> node traffic working.
 module "sg_eks_node" {
-  source = "../../../modules/security-group"
+  source = "../../modules/security-group"
 
   name        = "${local.name}-eks-node-sg"
   description = "EKS nodes: NodePort reachable only from the ALB"
@@ -137,7 +137,7 @@ module "sg_eks_node" {
 }
 
 module "sg_ec2" {
-  source = "../../../modules/security-group"
+  source = "../../modules/security-group"
 
   name        = "${local.name}-ec2-sg"
   description = "EC2 backend: HTTP only from VPC-A over the peering"

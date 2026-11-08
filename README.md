@@ -133,7 +133,8 @@ aws-multi-vpc-terraform/
 │   │   ├── terraform-apply.yml     # manual: apply all layers in order
 │   │   └── terraform-destroy.yml   # manual: destroy all layers in reverse order
 │   └── scripts/
-│       ├── plan-layers.sh          # plans every layer, skips layers whose upstream is not deployed
+│       ├── plan-layers.sh          # plans every layer of one environment, skips layers whose upstream is not deployed
+│       ├── apply-layer.sh          # applies one layer of one environment
 │       └── destroy-layer.sh        # destroys one layer, retrying a few times
 ├── assets/                   # images uploaded to S3 by Terraform
 │   ├── eks-logo.png
@@ -150,16 +151,19 @@ aws-multi-vpc-terraform/
 │   ├── alb/
 │   ├── nlb/
 │   └── dns/
+├── layers/                   # Terraform code of the four layers, shared by every environment
+│   ├── network/              # VPCs, peering, security groups
+│   ├── compute/              # S3 assets, EC2, EKS
+│   ├── workloads/            # Kubernetes Deployment + Service
+│   └── edge/                 # ALB, NLB, Route 53
+├── scripts/
+│   └── tf.sh                 # runs terraform for one environment and layer (backend + environment)
 └── envs/
-    └── demo/                 # each layer folder is its own root module with its own state
-        ├── values.yaml       # environment values shared by all layers
-        ├── network/          # VPCs, peering, security groups
-        ├── compute/          # S3 assets, EC2, EKS
-        ├── workloads/        # Kubernetes Deployment + Service
-        └── edge/             # ALB, NLB, Route 53
+    └── demo/                 # an environment is a folder with a values.yaml, no Terraform code
+        └── values.yaml
 ```
 
-Each layer folder is a complete root module with its own `backend.tf`, `versions.tf`, `values.tf` (reads `../values.yaml`) and `main.tf`. `network`, `compute` and `edge` also have `providers.tf`, `locals.tf` and `outputs.tf`; `workloads` is smaller (its `providers.tf` configures the Kubernetes provider, and it has no outputs). `compute` and `edge` have a `variables.tf` for the values that come from GitHub variables, and ship a `terraform.tfvars.example`. `envs/demo/values.yaml` is shared by all layers.
+Each folder under `layers/` is a complete root module with its own `backend.tf`, `versions.tf`, `variables.tf`, `values.tf` (reads `envs/<environment>/values.yaml`) and `main.tf`. `network`, `compute` and `edge` also have `providers.tf`, `locals.tf` and `outputs.tf`; `workloads` is smaller (its `providers.tf` configures the Kubernetes provider, and it has no outputs). `compute` and `edge` also declare the values that come from GitHub variables and secrets, and ship a `terraform.tfvars.example`. The layers are shared by all environments: the environment is chosen with the `environment` variable, which `scripts/tf.sh` sets (see [Environments](#environments)).
 
 ---
 
@@ -185,11 +189,10 @@ terraform init
 terraform apply -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 # note the outputs: state_bucket_name, plan_role_arn, apply_role_arn
 
-# 3. Put the bucket name into the backend.tf of every layer (envs/demo/*/backend.tf)
-#    and into common.state_bucket of envs/demo/values.yaml, then deploy
+# 3. Put the bucket name into common.state_bucket of envs/demo/values.yaml, then deploy
 cd ..
-cp envs/demo/compute/terraform.tfvars.example envs/demo/compute/terraform.tfvars   # edit eks_admin_principal_arns
-cp envs/demo/edge/terraform.tfvars.example envs/demo/edge/terraform.tfvars         # optional: domain_name
+cp layers/compute/terraform.tfvars.example layers/compute/terraform.tfvars   # edit eks_admin_principal_arns
+cp layers/edge/terraform.tfvars.example layers/edge/terraform.tfvars         # optional: domain_name
 make apply-all   # network -> compute -> workloads -> edge (plans and applies each layer)
 ```
 
@@ -204,7 +207,7 @@ The environment is split into four layers that are applied in this order; each l
 
 ### Makefile shortcuts
 
-The Makefile wraps the common commands. Run `make help` to list them. The environment defaults to `ENV=demo`. Single-layer targets take `LAYER=network|compute|workloads|edge`.
+The Makefile wraps the common commands. Run `make help` to list them. The environment defaults to `ENV=demo` (a folder under `envs/`). Single-layer targets take `LAYER=network|compute|workloads|edge`.
 
 | Command | What it does |
 |---|---|
@@ -248,7 +251,7 @@ Configuration comes from two places:
 1. **`envs/demo/values.yaml`** holds the environment values and is shared by all layers. Each layer reads it with `yamldecode(file(...))` in its `values.tf`, and checks it with preconditions (for example the name format, valid and non-overlapping CIDRs, and the NodePort range). A new environment is a new values file.
 2. **Variables** hold the values that come from outside the repository: set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables and secrets.
 
-`backend.tf` cannot read `values.yaml` (backend blocks cannot use variables), so the state bucket and region are also hard-coded there. Keep them in sync with `common.state_bucket` and `common.region`.
+The layers use a partial S3 backend. `scripts/tf.sh` passes the bucket, region and state key to `terraform init` with `-backend-config`, taking the bucket and region from `common.state_bucket` and `common.region`, so `values.yaml` is the only place that has them. These two keys must stay flat under `common:` because the script reads them with `awk`, not with a YAML parser.
 
 **`values.yaml`**
 
@@ -293,9 +296,25 @@ Terraform state is stored in an **S3 bucket** (created by `bootstrap/`), never i
 | Public access | Fully blocked; plain HTTP requests denied |
 | Locking | S3 native locking (`use_lockfile = true`, Terraform >= 1.10), no DynamoDB needed |
 
+### Environments
+
+The Terraform code of the layers lives once, in `layers/`. An environment is a folder under `envs/` that contains only a `values.yaml`:
+
+```bash
+cp -r envs/demo envs/staging        # then edit envs/staging/values.yaml
+make plan ENV=staging LAYER=network
+make apply-all ENV=staging
+```
+
+Change at least `common.name`, the VPC CIDRs and the `Environment` tag; the state bucket can stay the same, because the state key contains the environment name. `scripts/tf.sh <environment> <layer> <terraform args>` is the single entry point (the Makefile and the workflows use it): it sets `TF_VAR_environment`, passes the backend settings on `init`, and keeps one `.terraform` directory per environment and layer in `.terraform-data/`, so switching environments never reuses the wrong backend.
+
+In CI, `terraform-plan.yml` plans every folder under `envs/`, and apply and destroy take the environment name as an input.
+
 ### State layout
 
 The environment is split into four states, one per layer. A layer reads the outputs of the layers before it with `terraform_remote_state`, so each `outputs.tf` is the interface of its layer.
+
+The key is `aws-multi-vpc/<environment>/<layer>/terraform.tfstate`; the table shows it for `demo`.
 
 | Layer | State key | Reads | Provides |
 |---|---|---|---|
@@ -329,8 +348,8 @@ flowchart LR
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `terraform-plan.yml` | Pull request to `main` | Runs `fmt -check`, `validate` (all layers), `tflint`, `tfsec`, then plans every layer in order and posts (or updates) one PR comment with a section per layer. Layers whose upstream layers are not deployed yet are reported as skipped. Uses the read-only **plan role**. |
-| `terraform-apply.yml` | Manual (`workflow_dispatch`) | Plans and applies each layer in order (`network`, `compute`, `workloads`, `edge`) in the `production` environment. Must run from `main` and needs `production` approval. Merging does not deploy. Uses the **apply role**. |
-| `terraform-destroy.yml` | Manual (`workflow_dispatch`) | Destroys the layers in reverse order (`edge`, `workloads`, `compute`, `network`). Requires typing `destroy`, running from `main`, and `production` approval. Each layer is retried up to three times, because some deletions fail once while AWS finishes an earlier deletion asynchronously. |
+| `terraform-apply.yml` | Manual (`workflow_dispatch`, input `env_name`, default `demo`) | Plans and applies each layer in order (`network`, `compute`, `workloads`, `edge`) in the `production` environment. Must run from `main` and needs `production` approval. Merging does not deploy. Uses the **apply role**. |
+| `terraform-destroy.yml` | Manual (`workflow_dispatch`, inputs `confirm` and `env_name`) | Destroys the layers in reverse order (`edge`, `workloads`, `compute`, `network`). Requires typing `destroy`, running from `main`, and `production` approval. Each layer is retried up to three times, because some deletions fail once while AWS finishes an earlier deletion asynchronously. |
 
 All layers run as steps of a single job, so one `production` approval covers the whole apply or destroy. (The apply role only trusts jobs in the `production` environment, so one job per layer would need one approval per layer.)
 
@@ -435,7 +454,7 @@ terraform destroy -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 
 1. ~~**Split state.**~~ *Done.* The single state file is replaced by four smaller ones, so a change in one area has a smaller blast radius and parts of the environment can be created or destroyed independently.
 2. ~~**Group by nature.**~~ *Done.* The code is grouped into `network`, `compute`, `workloads` and `edge`, each its own root module with its own state. Layers share values through `terraform_remote_state`; replacing that with SSM Parameters is a possible next step.
-3. ~~**Drive configuration with `yamldecode`.**~~ *Done.* Each layer reads `envs/demo/values.yaml` with `yamldecode(file(...))`; only values that come from GitHub variables remain Terraform variables.
+3. ~~**Drive configuration with `yamldecode`.**~~ *Done.* Each layer reads `envs/<environment>/values.yaml` with `yamldecode(file(...))`; only values that come from GitHub variables remain Terraform variables.
 4. ~~**Normalize the modules.**~~ *Done.* Modules no longer know about this demo: there is one generic `security-group` module (instead of one that created the ALB, EKS and EC2 groups), and ports, paths, health checks, sizes and instance types are inputs (with a `description`, a default and a `validation` where a wrong value would fail late). The `alb` module takes a map of target groups. Except for the values a module genuinely needs to hard-code, every setting becomes a module input variable (with a `description`, a sensible default where possible, and a `validation` where a wrong value would fail late).
 5. ~~**Add a `values.yaml`.**~~ *Done.* The environment-specific values live in `envs/demo/values.yaml`, so the Terraform code stays generic and a new environment only needs a new values file. Ports, page paths, instance types and node group sizes are there too.
 
