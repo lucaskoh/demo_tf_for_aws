@@ -33,9 +33,61 @@ data "aws_availability_zones" "available" {
       error_message = "common.http_port in values.yaml must be a valid port (1-65535)."
     }
 
+    # ---- workloads, instances and backends (see backends.tf) ----
+
     precondition {
-      condition     = local.node_port >= 30000 && local.node_port <= 32767
-      error_message = "network.node_port in values.yaml must be a valid Kubernetes NodePort (30000-32767)."
+      condition     = length(local.backends) > 0
+      error_message = "values.yaml must declare at least one backend under backends:."
+    }
+
+    precondition {
+      condition     = length(local.bad_names) == 0 && length(local.bad_backend_keys) == 0
+      error_message = "Names under workloads:, instances: and backends: must be lowercase letters, digits and hyphens (workloads and instances up to 40 characters), and '${local.name}-<backend>-tg' must be at most 32 characters (target group name limit). Rename: ${join(", ", concat(local.bad_names, local.bad_backend_keys))}."
+    }
+
+    precondition {
+      condition     = length(local.bad_targets) == 0
+      error_message = "Each backend needs a path and exactly one target, either 'workload: <name>' or 'instance: <name>', that is declared under workloads: or instances:. Check: ${join(", ", local.bad_targets)}."
+    }
+
+    precondition {
+      condition     = length(local.bad_paths) == 0
+      error_message = "path of a backend may contain only letters, digits, dots, underscores and hyphens (one URL segment, no slashes). Check: ${join(", ", local.bad_paths)}."
+    }
+
+    precondition {
+      condition     = length(local.dup_paths) == 0
+      error_message = "Backends must use different paths. Used more than once: ${join(", ", local.dup_paths)}."
+    }
+
+    precondition {
+      condition     = length(local.bad_prios) == 0 && length(local.dup_prios) == 0
+      error_message = "ALB rule priorities must be between 1 and 50000 and unique. Set 'priority' on one of these backends: ${join(", ", concat(local.bad_prios, [for k, b in local.backends : k if contains(local.dup_prios, b.priority)]))}."
+    }
+
+    precondition {
+      condition     = length(local.bad_ports) == 0 && length(local.dup_ports) == 0
+      error_message = "A routed workload needs a unique node_port between 30000 and 32767, and container_port must be between 1 and 65535. Set 'node_port' on one of these workloads: ${join(", ", concat(local.bad_ports, [for k, w in local.exposed_workloads : k if contains(local.dup_ports, w.node_port)]))}."
+    }
+
+    precondition {
+      condition     = length(local.bad_demo_ports) == 0
+      error_message = "A workload without 'image' serves the built-in Nginx demo page, which listens on port 80. Remove container_port or set an image: ${join(", ", local.bad_demo_ports)}."
+    }
+
+    precondition {
+      condition     = length(local.malformed_ips) == 0 && length(local.outside_ips) == 0 && length(local.dup_ips) == 0
+      error_message = "An instance needs a unique private_ip inside the VPC-B subnet ${local.vpc_b_subnet_cidr}. Set 'private_ip' on one of these instances: ${join(", ", concat(local.malformed_ips, local.outside_ips, [for k, i in local.instances : k if contains(local.dup_ips, i.private_ip)]))}."
+    }
+
+    precondition {
+      condition     = length(local.bad_texts) == 0
+      error_message = "page_title and page_heading must not contain <, > or \" characters or line breaks. Check: ${join(", ", local.bad_texts)}."
+    }
+
+    precondition {
+      condition     = length(local.bad_images) == 0 && length(local.bad_health) == 0
+      error_message = "image must look like an image reference (for example nginx:1.27-alpine) and health_check_path must start with '/'. Check: ${join(", ", concat(local.bad_images, local.bad_health))}."
     }
   }
 }
@@ -93,20 +145,26 @@ module "sg_alb" {
     }
   }
 
-  egress_rules = {
-    to_eks = {
-      description                  = "To EKS nodes (NodePort)"
-      from_port                    = local.node_port
-      to_port                      = local.node_port
-      referenced_security_group_id = module.sg_eks_node.security_group_id
+  # Generated from what is routed: one rule per routed workload (its NodePort), and
+  # one rule for all routed instances together (same port, same network).
+  egress_rules = merge(
+    {
+      for k, w in local.exposed_workloads : "workload-${k}" => {
+        description                  = "To EKS nodes (NodePort of ${k})"
+        from_port                    = w.node_port
+        to_port                      = w.node_port
+        referenced_security_group_id = module.sg_eks_node.security_group_id
+      }
+    },
+    {
+      for k in ["instances"] : k => {
+        description = "To EC2 instances in VPC-B over the peering"
+        from_port   = local.http_port
+        to_port     = local.http_port
+        cidr_ipv4   = module.vpc_b.cidr_block
+      } if length(local.routed_instances) > 0
     }
-    to_ec2 = {
-      description = "To EC2 in VPC-B over the peering"
-      from_port   = local.http_port
-      to_port     = local.http_port
-      cidr_ipv4   = module.vpc_b.cidr_block
-    }
-  }
+  )
 }
 
 # Attach this IN ADDITION to the EKS cluster security group.
@@ -118,11 +176,12 @@ module "sg_eks_node" {
   description = "EKS nodes: NodePort reachable only from the ALB"
   vpc_id      = module.vpc_a.vpc_id
 
+  # One rule per routed workload: its NodePort, from the ALB only
   ingress_rules = {
-    from_alb = {
-      description                  = "NodePort from ALB only"
-      from_port                    = local.node_port
-      to_port                      = local.node_port
+    for k, w in local.exposed_workloads : "workload-${k}" => {
+      description                  = "NodePort of ${k} from ALB only"
+      from_port                    = w.node_port
+      to_port                      = w.node_port
       referenced_security_group_id = module.sg_alb.security_group_id
     }
   }

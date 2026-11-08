@@ -21,17 +21,11 @@ common:
     ManagedBy: terraform
   # Port of the NLB and ALB listeners, and of Nginx on the EC2 backend
   http_port: 80
-  # Path (without slashes) of each demo page: /<path> on the ALB, and the folder Nginx serves it from
-  app_paths:
-    eks: html1
-    ec2: html2
 
 network:
   # VPC CIDRs must not overlap (subnets are derived from them: /16 -> /24)
   vpc_a_cidr: 10.0.0.0/16 # NLB, ALB, EKS
   vpc_b_cidr: 10.1.0.0/16 # EC2
-  # Kubernetes NodePort between the ALB and the EKS nodes (30000-32767)
-  node_port: 30080
 
 compute:
   ec2_instance_type: t3.micro
@@ -42,7 +36,40 @@ compute:
     desired_size: 1
     min_size: 1
     max_size: 2
-  # Fixed private IP of the EC2 instance. null = the .100 address of the VPC-B subnet.
-  ec2_private_ip: null
   # EKS Kubernetes version, e.g. "1.33" (quote it). null = the EKS default for new clusters.
   kubernetes_version: null
+
+# What runs, and how traffic reaches it. Names are lowercase letters, digits and hyphens.
+
+# Deployments on the EKS cluster. Only the ones that a backend routes to get a NodePort
+# and security group rules; the others are reachable inside the cluster only.
+workloads:
+  web:
+    # Optional. Without "image" the built-in Nginx demo page is served at the routed path(s).
+    #   image: nginx:1.27-alpine
+    #   container_port: 80             # the demo page needs 80
+    #   replicas: 1
+    #   health_check_path: /           # readiness probe
+    #   node_port: 30080               # derived from the name when not set (30000-32767)
+    #   page_title / page_heading      # texts of the demo page
+
+# Nginx instances in VPC-B, reached over the VPC peering.
+instances:
+  legacy:
+    # Optional:
+    #   instance_type: t3.micro        # default: compute.ec2_instance_type
+    #   private_ip: 10.1.1.100         # derived from the name when not set
+    #   page_title / page_heading
+
+# Routes on the ALB: a path that leads to one workload or one instance.
+# "<common.name>-<backend name>-tg" must fit in 32 characters.
+backends:
+  eks-page:
+    path: html1 # served at /html1 (one URL segment; the app must serve under this prefix)
+    workload: web
+    # Optional:
+    #   health_check_path: /html1/index.html   # ALB health check (default: demo page, or / for a custom image)
+    #   priority: 10                           # derived from the name when not set
+  ec2-page:
+    path: html2
+    instance: legacy

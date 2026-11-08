@@ -14,7 +14,17 @@ data "aws_ami" "al2023" {
 }
 
 locals {
-  index_html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>${var.page_title}</title></head><body><h1>${var.page_heading}</h1><img src=\"${var.image_url}\" alt=\"${var.image_alt}\" width=\"200\"></body></html>"
+  # The same page is written to every path. This is built outside the user_data heredoc on
+  # purpose: a heredoc that contains %{ } template directives keeps its indentation, which
+  # would break the script.
+  page_commands = join("\n", [
+    for p in var.path_prefixes : <<-EOC
+      mkdir -p /usr/share/nginx/html/${p}
+      cat > /usr/share/nginx/html/${p}/index.html <<'HTML'
+      ${var.page_html}
+      HTML
+    EOC
+  ])
 
   user_data = <<-EOT
     #!/bin/bash
@@ -22,10 +32,7 @@ locals {
     dnf install -y nginx
     # No-op for port 80 (the default); otherwise move the default server to http_port
     sed -i -E 's/^(\s*listen\s+(\[::\]:)?)80;/\1${var.http_port};/' /etc/nginx/nginx.conf
-    mkdir -p /usr/share/nginx/html/${var.path_prefix}
-    cat > /usr/share/nginx/html/${var.path_prefix}/index.html <<'HTML'
-    ${local.index_html}
-    HTML
+    ${local.page_commands}
     systemctl enable --now nginx
   EOT
 }

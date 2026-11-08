@@ -24,11 +24,6 @@ variable "instance_type" {
   default     = "t3.micro"
 }
 
-variable "image_url" {
-  description = "Public URL of the image shown on the page (S3 object URL)"
-  type        = string
-}
-
 variable "ami_name_pattern" {
   description = "Name pattern of the Amazon AMI to use (the most recent match is picked)"
   type        = string
@@ -64,33 +59,25 @@ variable "http_port" {
   }
 }
 
-variable "path_prefix" {
-  description = "Path (without slashes) under which the page is served, e.g. html2 -> /html2/index.html"
-  type        = string
-  default     = "html2"
+variable "path_prefixes" {
+  description = "Paths (without slashes) under which the page is served, e.g. html2 -> /html2/index.html. The same page is written to every path. Empty = no page."
+  type        = list(string)
+  default     = []
 
   validation {
-    condition     = can(regex("^[A-Za-z0-9._-]+$", var.path_prefix))
-    error_message = "path_prefix must contain only letters, digits, dots, underscores and hyphens (no slashes)."
+    condition     = alltrue([for p in var.path_prefixes : can(regex("^[A-Za-z0-9._-]+$", p))])
+    error_message = "Each path prefix must contain only letters, digits, dots, underscores and hyphens (no slashes)."
   }
 }
 
-variable "page_title" {
-  description = "HTML title of the page"
+variable "page_html" {
+  description = "HTML of the page served at /<path>/index.html for every path in path_prefixes. Must be a single line (it is written from user_data)."
   type        = string
-  default     = "EC2"
-}
 
-variable "page_heading" {
-  description = "Heading shown on the page"
-  type        = string
-  default     = "Hello from EC2 (VPC-B via VPC Peering)"
-}
-
-variable "image_alt" {
-  description = "Alt text of the image on the page"
-  type        = string
-  default     = "EC2 logo"
+  validation {
+    condition     = !can(regex("[\\n\\r]", var.page_html))
+    error_message = "page_html must be a single line."
+  }
 }
 
 variable "tags" {

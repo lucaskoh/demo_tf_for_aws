@@ -10,11 +10,9 @@ locals {
   state_bucket = local.common.state_bucket
 
   http_port = local.common.http_port
-  ec2_path  = local.common.app_paths.ec2
 
   ec2_instance_type = local.config.ec2_instance_type
   eks               = local.config.eks
 
-  ec2_private_ip_override = local.config.ec2_private_ip
-  kubernetes_version      = local.config.kubernetes_version
+  kubernetes_version = local.config.kubernetes_version
 }

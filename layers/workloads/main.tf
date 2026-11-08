@@ -34,14 +34,32 @@ data "terraform_remote_state" "compute" {
 locals {
   network = data.terraform_remote_state.network.outputs
   compute = data.terraform_remote_state.compute.outputs
+
+  workloads = local.network.workloads
 }
 
-module "k8s_nginx" {
-  source = "../../modules/k8s-nginx"
+# One Deployment + Service per entry under workloads: (the numbers come from the
+# network layer). A workload that no backend routes to gets a ClusterIP Service.
+module "app" {
+  source   = "../../modules/k8s-app"
+  for_each = local.workloads
 
-  image_url = local.compute.s3_object_urls["eks-logo.png"]
-  node_port = local.network.node_port
+  # "app-" avoids clashes with built-in objects such as the "kubernetes" Service
+  name              = "app-${each.key}"
+  image             = coalesce(each.value.image, "nginx:1.27-alpine")
+  container_port    = each.value.container_port
+  node_port         = each.value.node_port
+  replicas          = each.value.replicas
+  health_check_path = each.value.health_check_path
 
-  name        = "nginx-${local.eks_path}"
-  path_prefix = local.eks_path
+  # No image: serve the built-in demo page with Nginx, at every routed path
+  static_file = each.value.image == null ? {
+    mount_paths = length(each.value.paths) > 0 ? [for p in each.value.paths : "/usr/share/nginx/html/${p}/index.html"] : ["/usr/share/nginx/html/index.html"]
+    content = trimspace(templatefile("${path.module}/../../templates/demo-page.html.tftpl", {
+      title     = each.value.page_title
+      heading   = each.value.page_heading
+      image_url = local.compute.s3_object_urls["eks-logo.png"]
+      image_alt = "EKS logo"
+    }))
+  } : null
 }

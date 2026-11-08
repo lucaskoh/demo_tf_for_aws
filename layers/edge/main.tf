@@ -50,28 +50,21 @@ module "alb" {
   listener_port = local.http_port
 
   default_response = {
-    message_body = "Not found. Try /${local.eks_path} (EKS) or /${local.ec2_path} (EC2)."
+    message_body = "Not found. Try: ${join(", ", [for k, b in local.network.backends : "/${b.path} (${k})"])}"
   }
 
+  # One target group and route per backend. A workload is reached on its NodePort
+  # (instance targets: the nodes of the Auto Scaling Group); an instance is an IP
+  # target in the peered VPC-B.
   target_groups = {
-    # EKS worker nodes (instance targets on the NodePort)
-    eks = {
-      port                   = local.network.node_port
-      target_type            = "instance"
-      autoscaling_group_name = local.compute.eks_node_group_asg_name
-      path_patterns          = ["/${local.eks_path}", "/${local.eks_path}/*"]
-      priority               = 10
-      health_check           = { path = "/${local.eks_path}/index.html" }
-    }
-
-    # EC2 in the peered VPC-B (IP target)
-    ec2 = {
-      port          = local.http_port
-      target_type   = "ip"
-      ip_targets    = [local.compute.ec2_private_ip]
-      path_patterns = ["/${local.ec2_path}", "/${local.ec2_path}/*"]
-      priority      = 20
-      health_check  = { path = "/${local.ec2_path}/index.html" }
+    for k, b in local.network.backends : k => {
+      port                   = b.workload != null ? b.node_port : local.http_port
+      target_type            = b.workload != null ? "instance" : "ip"
+      autoscaling_group_name = b.workload != null ? local.compute.eks_node_group_asg_name : null
+      ip_targets             = b.instance != null ? [local.compute.ec2_private_ips[b.instance]] : []
+      path_patterns          = ["/${b.path}", "/${b.path}/*"]
+      priority               = b.priority
+      health_check           = { path = b.health_check_path }
     }
   }
 }

@@ -42,9 +42,19 @@ output "ec2_sg_id" {
   value       = module.sg_ec2.security_group_id
 }
 
-output "node_port" {
-  description = "NodePort between the ALB and the EKS nodes (single source of truth for all layers)"
-  value       = local.node_port
+output "workloads" {
+  description = "The Deployments from values.yaml, fully resolved: image, ports, replicas, health check path, routed paths and the NodePort (null when not routed)"
+  value       = local.workloads
+}
+
+output "instances" {
+  description = "The EC2 instances from values.yaml, fully resolved: instance type (null = default), fixed private IP and routed paths"
+  value       = local.instances
+}
+
+output "backends" {
+  description = "The routes from values.yaml, fully resolved (single source of truth for all layers): path, target, ALB rule priority, health check path and the port or IP of the target"
+  value       = local.backends
 }
 
 output "peering_connection_id" {
