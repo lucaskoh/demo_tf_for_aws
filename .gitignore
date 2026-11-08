@@ -47,3 +47,5 @@ Thumbs.db
 .vscode/
 *.swp
 *~
+# CI plan logs (written by .github/scripts/plan-layers.sh)
+plan-output/

@@ -128,10 +128,12 @@ aws-multi-vpc-terraform/
 ├── .gitignore
 ├── Makefile                  # make help lists all targets
 ├── .github/
-│   └── workflows/
-│       ├── terraform-plan.yml      # on PR: checks + plan comment
-│       ├── terraform-apply.yml     # manual: apply
-│       └── terraform-destroy.yml   # manual: tear everything down
+│   ├── workflows/
+│   │   ├── terraform-plan.yml      # on PR: checks + plan comment
+│   │   ├── terraform-apply.yml     # manual: apply all layers in order
+│   │   └── terraform-destroy.yml   # manual: destroy all layers in reverse order
+│   └── scripts/
+│       └── plan-layers.sh          # plans every layer, skips layers whose upstream is not deployed
 ├── assets/                   # images uploaded to S3 by Terraform
 │   ├── eks-logo.png
 │   └── ec2-logo.png
@@ -148,16 +150,14 @@ aws-multi-vpc-terraform/
 │   ├── nlb/
 │   └── dns/
 └── envs/
-    └── demo/                 # run Terraform from here
-        ├── backend.tf
-        ├── versions.tf
-        ├── providers.tf
-        ├── main.tf
-        ├── variables.tf
-        ├── locals.tf
-        ├── outputs.tf
-        └── terraform.tfvars.example
+    └── demo/                 # one folder per layer; each is its own root module with its own state
+        ├── network/          # VPCs, peering, security groups
+        ├── compute/          # S3 assets, EC2, EKS
+        ├── workloads/        # Kubernetes Deployment + Service
+        └── edge/             # ALB, NLB, Route 53
 ```
+
+Each layer folder is a complete root module with its own `backend.tf`, `versions.tf`, `main.tf` and `variables.tf`. `network`, `compute` and `edge` also have `providers.tf`, `locals.tf` and `outputs.tf`; `workloads` is smaller (its `providers.tf` configures the Kubernetes provider, and it has no outputs). `compute` and `edge` ship a `terraform.tfvars.example`.
 
 ---
 
@@ -183,37 +183,40 @@ terraform init
 terraform apply -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 # note the outputs: state_bucket_name, plan_role_arn, apply_role_arn
 
-# 3. Put the bucket name into envs/demo/backend.tf, then deploy
-cd ../envs/demo
-cp terraform.tfvars.example terraform.tfvars   # edit eks_admin_principal_arns (and domain_name if you have one)
-terraform init
-terraform plan
-terraform apply
+# 3. Put the bucket name into the backend.tf of every layer (envs/demo/*/backend.tf)
+#    and into the state_bucket default of compute, workloads and edge, then deploy
+cd ..
+cp envs/demo/compute/terraform.tfvars.example envs/demo/compute/terraform.tfvars   # edit eks_admin_principal_arns
+cp envs/demo/edge/terraform.tfvars.example envs/demo/edge/terraform.tfvars         # optional: domain_name
+make apply-all   # network -> compute -> workloads -> edge (plans and applies each layer)
 ```
+
+The environment is split into four layers that are applied in this order; each layer reads what it needs from the layers before it (see [Remote State](#remote-state)). To work on one layer only, use `make plan LAYER=network`, `make apply LAYER=network`, and so on.
 
 > **Immutable OIDC subject:** newer GitHub repositories send an OIDC subject that includes numeric IDs (`repo:<owner>@<owner-id>/<repo>@<repo-id>`), and then the CI roles reject the login with `Not authorized to perform sts:AssumeRoleWithWebIdentity`. Check with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` and, if it shows a `sub_claim_prefix`, pass it to bootstrap:
 > `terraform apply -var="github_repo=..." -var="github_oidc_subject_prefix=<sub_claim_prefix>"` (or `make bootstrap GITHUB_REPO=... OIDC_SUB_PREFIX=...`).
 
 > **Note:** set `eks_admin_principal_arns` to your own IAM user/role ARN when running locally, otherwise nobody has cluster-admin on the EKS cluster and the Kubernetes resources cannot be created.
 
-> **Tip:** a single `terraform apply` normally works. If the first `apply` fails because the Kubernetes provider cannot reach the cluster yet, re-run it, or run
-> `terraform apply -target=module.eks` first and then a full `terraform apply`.
+> **Tip:** the Kubernetes resources live in their own layer (`workloads`), which is configured from the EKS cluster created by `compute`. This is why no `-target` workaround is needed on the first deployment.
 
 ### Makefile shortcuts
 
-The Makefile wraps the common commands. Run `make help` to list them. The environment defaults to `ENV=demo` (override with `make plan ENV=staging`).
+The Makefile wraps the common commands. Run `make help` to list them. The environment defaults to `ENV=demo`. Single-layer targets take `LAYER=network|compute|workloads|edge`.
 
 | Command | What it does |
 |---|---|
 | `make bootstrap GITHUB_REPO=owner/repo` | One time: create the state bucket and CI roles |
 | `make fmt` / `make fmt-check` | Format Terraform files / check formatting (same as CI) |
-| `make validate` | `init -backend=false` and `validate`; no AWS credentials needed |
+| `make validate` | `init -backend=false` and `validate` for every layer; no AWS credentials needed |
 | `make lint` | Run `tflint` on all modules |
-| `make init` | Initialize the environment with the S3 backend |
-| `make plan` | Create an execution plan, saved as `tfplan` |
-| `make apply` | Run `plan`, then apply the saved plan |
-| `make destroy` | Destroy the environment (asks for confirmation) |
-| `make output` | Show outputs (demo URLs) |
+| `make init LAYER=...` | Initialize one layer with the S3 backend |
+| `make plan LAYER=...` | Create an execution plan for one layer, saved as `tfplan` |
+| `make apply LAYER=...` | Run `plan`, then apply the saved plan of one layer |
+| `make destroy LAYER=...` | Destroy one layer (asks for confirmation) |
+| `make apply-all` | Apply all layers in order (network first) |
+| `make destroy-all` | Destroy all layers in reverse order (edge first); asks per layer |
+| `make output LAYER=edge` | Show the outputs of a layer (the demo URLs are in `edge`) |
 | `make clean` | Remove `.terraform/` caches and saved plans |
 
 ### Verify
@@ -225,7 +228,7 @@ curl http://<host>/html2   # Hello from EC2 (VPC-B via VPC Peering)
 curl http://<host>/        # 404 with usage hint
 ```
 
-Terraform also prints the URLs as outputs. With a domain:
+The `edge` layer prints the URLs as outputs (`make output LAYER=edge`). With a domain:
 
 ```
 demo_url_eks = "http://demo.example.com/html1"
@@ -238,22 +241,39 @@ Without a domain, the host is the NLB DNS name (for example `demo-nlb-1234567890
 
 ## Configuration
 
-Set these in `envs/demo/terraform.tfvars`:
+Variables are per layer. Set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables.
+
+**`network`** (`envs/demo/network`)
 
 | Variable | Default | Description |
 |---|---|---|
 | `region` | `ap-northeast-1` | AWS region |
-| `domain_name` | `""` | Existing public Route 53 hosted zone, e.g. `example.com`. Empty = no DNS record; use the NLB DNS name |
-| `record_name` | `demo` | Subdomain for the demo (`demo.example.com`). Only used when `domain_name` is set |
 | `name` | `demo` | Name prefix for resources (1-20 chars: lowercase letters, digits, hyphens) |
 | `vpc_a_cidr` | `10.0.0.0/16` | CIDR of VPC-A |
 | `vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B |
+| `node_port` | `30080` | Kubernetes NodePort between the ALB and the EKS nodes. Published as an output; the other layers use that value |
+
+**`compute`** (`envs/demo/compute`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `region`, `name` | as above | Must match the `network` layer |
+| `state_bucket` | *(bucket name)* | State bucket, used to read the `network` state |
 | `ec2_private_ip` | `null` | Fixed private IP of the EC2 instance. `null` = the `.100` address of the VPC-B subnet (`10.1.1.100`) |
-| `node_port` | `30080` | Kubernetes NodePort between the ALB and the EKS nodes |
 | `kubernetes_version` | `null` | EKS version. `null` = the EKS default for new clusters |
 | `eks_admin_principal_arns` | `[]` | IAM users/roles with cluster-admin on EKS for local runs (the CI apply role is added automatically) |
 | `ci_plan_role_arn` | `""` | CI plan role (read-only EKS access). Set by CI from `AWS_PLAN_ROLE_ARN` |
 | `ci_apply_role_arn` | `""` | CI apply role (EKS admin). Set by CI from `AWS_APPLY_ROLE_ARN` |
+
+**`workloads`** (`envs/demo/workloads`): `region` and `state_bucket` only.
+
+**`edge`** (`envs/demo/edge`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `region`, `name`, `state_bucket` | as above | Must match the other layers |
+| `domain_name` | `""` | Existing public Route 53 hosted zone, e.g. `example.com`. Empty = no DNS record; use the NLB DNS name |
+| `record_name` | `demo` | Subdomain for the demo (`demo.example.com`). Only used when `domain_name` is set |
 
 `domain_name` is optional. Set it to create the Route 53 alias record; leave it empty to skip DNS.
 
@@ -269,6 +289,21 @@ Terraform state is stored in an **S3 bucket** (created by `bootstrap/`), never i
 | Encryption | SSE-S3 (AES256) |
 | Public access | Fully blocked; plain HTTP requests denied |
 | Locking | S3 native locking (`use_lockfile = true`, Terraform >= 1.10), no DynamoDB needed |
+
+### State layout
+
+The environment is split into four states, one per layer. A layer reads the outputs of the layers before it with `terraform_remote_state`, so each `outputs.tf` is the interface of its layer.
+
+| Layer | State key | Reads | Provides |
+|---|---|---|---|
+| `network` | `aws-multi-vpc/demo/network/terraform.tfstate` | nothing | VPC and subnet IDs, security group IDs, `node_port` |
+| `compute` | `aws-multi-vpc/demo/compute/terraform.tfstate` | `network` | EC2 private IP, EKS cluster endpoint/CA/ASG name, S3 object URLs |
+| `workloads` | `aws-multi-vpc/demo/workloads/terraform.tfstate` | `network`, `compute` | nothing |
+| `edge` | `aws-multi-vpc/demo/edge/terraform.tfstate` | `network`, `compute` | demo URLs, NLB/ALB DNS names |
+
+- **Apply order:** `network`, `compute`, then `workloads` and `edge` (independent of each other). **Destroy order:** the reverse. `workloads` must be destroyed before `compute`, because the Kubernetes provider needs the cluster.
+- A layer can only be planned after the layers it reads have been applied, because it reads their real, applied outputs. On a fresh account only `network` can be planned.
+- `workloads` is a separate layer so the Kubernetes provider is configured from the `compute` state instead of from a resource in the same state.
 
 > State files can contain secrets in plain text and Git has no locking, so committing `terraform.tfstate` is unsafe.
 > The provided `.gitignore` should exclude `*.tfstate*`, `.terraform/`, and `terraform.tfvars`.
@@ -290,9 +325,11 @@ flowchart LR
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `terraform-plan.yml` | Pull request to `main` | Runs `fmt -check`, `validate`, `tflint`, `tfsec`, then `terraform plan` and posts (or updates) the plan as a PR comment. Uses the read-only **plan role**. |
-| `terraform-apply.yml` | Manual (`workflow_dispatch`) | Runs `terraform plan` then `terraform apply` in the `production` environment. Must run from `main` and needs `production` approval. Merging does not deploy. Uses the **apply role**. |
-| `terraform-destroy.yml` | Manual (`workflow_dispatch`) | Destroys the demo environment. Requires typing `destroy`, running from `main`, and `production` approval. |
+| `terraform-plan.yml` | Pull request to `main` | Runs `fmt -check`, `validate` (all layers), `tflint`, `tfsec`, then plans every layer in order and posts (or updates) one PR comment with a section per layer. Layers whose upstream layers are not deployed yet are reported as skipped. Uses the read-only **plan role**. |
+| `terraform-apply.yml` | Manual (`workflow_dispatch`) | Plans and applies each layer in order (`network`, `compute`, `workloads`, `edge`) in the `production` environment. Must run from `main` and needs `production` approval. Merging does not deploy. Uses the **apply role**. |
+| `terraform-destroy.yml` | Manual (`workflow_dispatch`) | Destroys the layers in reverse order (`edge`, `workloads`, `compute`, `network`). Requires typing `destroy`, running from `main`, and `production` approval. |
+
+All layers run as steps of a single job, so one `production` approval covers the whole apply or destroy. (The apply role only trusts jobs in the `production` environment, so one job per layer would need one approval per layer.)
 
 ### One-time setup
 
@@ -319,7 +356,7 @@ flowchart LR
 
 ### Known caveats
 
-- **First deployment:** the Kubernetes provider is configured from the EKS cluster, which does not exist yet on the first run. A single `terraform apply` normally works; if it fails on the Kubernetes resources, re-run it, or run `terraform apply -target=module.eks` first.
+- **Plans of downstream layers:** a layer reads the *applied* state of the layers before it. On a fresh account only `network` can be planned, and a pull request that changes an upstream output and its consumer is planned against the old upstream values.
 - **Reading Kubernetes resources in `plan`:** once the cluster exists, grant the plan role read access via an EKS access entry (`AmazonEKSViewPolicy`), otherwise `plan` fails on Kubernetes resources.
 - **Apply re-plans:** `apply` runs a fresh plan when you trigger it, so the result can differ from the PR comment if the infrastructure changed in between.
 - **Drift between `main` and AWS:** because apply is manual, merged changes are not deployed until you run the workflow.
@@ -367,8 +404,7 @@ Go to **Actions → Terraform Destroy → Run workflow**, type `destroy`, and ap
 **Option B: locally**
 
 ```bash
-cd envs/demo
-terraform destroy
+make destroy-all   # edge -> workloads -> compute -> network, asks for confirmation per layer
 ```
 
 **Optional: remove the state bucket and CI roles** (do this last, after the demo environment is destroyed)
@@ -383,10 +419,10 @@ terraform destroy -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 
 ## Planned Architecture Changes
 
-> **Status: planned, not implemented yet.** The repository currently has a single root module (`envs/demo`) with a single state file. The next iteration restructures it as follows.
+> **Status:** items 1 and 2 are done (see [State layout](#state-layout)); items 3 to 5 are planned.
 
-1. **Split state.** Replace the single state file with several smaller ones, so a change in one area has a smaller blast radius, plans are faster, and parts of the environment can be created or destroyed independently.
-2. **Group by nature.** Organize the Terraform code into folders by the kind of resources they manage (for example network, compute, and edge) instead of one flat root module. Each folder is its own root module with its own state.
+1. ~~**Split state.**~~ *Done.* The single state file is replaced by four smaller ones, so a change in one area has a smaller blast radius and parts of the environment can be created or destroyed independently.
+2. ~~**Group by nature.**~~ *Done.* The code is grouped into `network`, `compute`, `workloads` and `edge`, each its own root module with its own state. Layers share values through `terraform_remote_state`; replacing that with SSM Parameters is a possible next step.
 3. **Drive configuration with `yamldecode`.** Read configuration from YAML files with `yamldecode(file(...))` instead of long lists of Terraform variables.
 4. **Normalize the modules.** Except for the values a module genuinely needs to hard-code, every setting becomes a module input variable (with a `description`, a sensible default where possible, and a `validation` where a wrong value would fail late).
 5. **Add a `values.yaml`.** Keep the environment-specific values (CIDRs, instance types, sizes, names, and so on) in a `values.yaml` file, so the Terraform code stays generic and a new environment only needs a new values file.

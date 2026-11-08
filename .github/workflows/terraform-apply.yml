@@ -28,11 +28,9 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     # Bound to an environment: Required reviewers in GitHub give a manual approval before apply,
-    # and the AWS apply role only trusts OIDC tokens from this environment
+    # and the AWS apply role only trusts OIDC tokens from this environment.
+    # All layers run as steps of this one job so the whole apply needs a single approval.
     environment: production
-    defaults:
-      run:
-        working-directory: envs/demo
     steps:
       - uses: actions/checkout@v4
 
@@ -46,14 +44,37 @@ jobs:
           role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: terraform init
-        run: terraform init -input=false
+      # Order matters: each layer reads the state of the layers before it.
+      # workloads and edge only depend on network and compute.
 
-      - name: terraform plan
-        run: terraform plan -no-color -input=false -out=tfplan
+      - name: apply network
+        working-directory: envs/demo/network
+        run: |
+          terraform init -input=false
+          terraform plan -no-color -input=false -out=tfplan
+          terraform apply -no-color -input=false tfplan
 
-      - name: terraform apply
-        run: terraform apply -no-color -input=false tfplan
+      - name: apply compute
+        working-directory: envs/demo/compute
+        run: |
+          terraform init -input=false
+          terraform plan -no-color -input=false -out=tfplan
+          terraform apply -no-color -input=false tfplan
+
+      - name: apply workloads
+        working-directory: envs/demo/workloads
+        run: |
+          terraform init -input=false
+          terraform plan -no-color -input=false -out=tfplan
+          terraform apply -no-color -input=false tfplan
+
+      - name: apply edge
+        working-directory: envs/demo/edge
+        run: |
+          terraform init -input=false
+          terraform plan -no-color -input=false -out=tfplan
+          terraform apply -no-color -input=false tfplan
 
       - name: Show outputs
+        working-directory: envs/demo/edge
         run: terraform output

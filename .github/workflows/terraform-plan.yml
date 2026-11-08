@@ -8,6 +8,7 @@ on:
       - "modules/**"
       - "assets/**"
       - ".github/workflows/terraform-*.yml"
+      - ".github/scripts/**"
 
 permissions:
   contents: read
@@ -41,13 +42,8 @@ jobs:
       - name: terraform fmt
         run: terraform fmt -check -recursive
 
-      - name: terraform init (no backend)
-        working-directory: envs/demo
-        run: terraform init -backend=false -input=false
-
-      - name: terraform validate
-        working-directory: envs/demo
-        run: terraform validate
+      - name: terraform validate (all layers, no backend)
+        run: make validate
 
       - uses: terraform-linters/setup-tflint@v4
 
@@ -66,9 +62,6 @@ jobs:
     name: plan
     needs: validate
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: envs/demo
     steps:
       - uses: actions/checkout@v4
 
@@ -82,13 +75,12 @@ jobs:
           role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: terraform init
-        run: terraform init -input=false
-
-      - name: terraform plan
+      # Plans network, compute, workloads and edge in order. A layer whose
+      # upstream layers are not deployed yet is skipped, not failed.
+      - name: terraform plan (all layers)
         id: plan
         continue-on-error: true
-        run: terraform plan -no-color -input=false -out=tfplan 2>&1 | tee plan.txt
+        run: bash .github/scripts/plan-layers.sh
 
       - name: Comment plan on PR
         if: always()
@@ -99,25 +91,42 @@ jobs:
           script: |
             const fs = require('fs');
             const marker = '<!-- terraform-plan -->';
-            let plan = fs.existsSync('envs/demo/plan.txt')
-              ? fs.readFileSync('envs/demo/plan.txt', 'utf8')
-              : '(no plan output)';
-            const max = 60000;
-            if (plan.length > max) {
-              plan = plan.slice(0, max) + '\n\n... (truncated, see workflow logs)';
-            }
+            const dir = 'plan-output';
+            const icons = { success: '✅', skipped: '⏭️', failed: '❌' };
+            const maxPerLayer = 14000;
+
+            const summaryFile = `${dir}/summary.tsv`;
+            const rows = fs.existsSync(summaryFile)
+              ? fs.readFileSync(summaryFile, 'utf8').trim().split('\n').filter(Boolean).map(l => l.split('\t'))
+              : [];
+
+            const sections = rows.map(([layer, status]) => {
+              const file = `${dir}/${layer}.txt`;
+              let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '(no output)';
+              if (text.length > maxPerLayer) {
+                text = text.slice(0, maxPerLayer) + '\n\n... (truncated, see workflow logs)';
+              }
+              return [
+                `<details><summary>${icons[status] || '?'} <b>${layer}</b>: ${status}</summary>`,
+                '',
+                '```terraform',
+                text,
+                '```',
+                '',
+                '</details>',
+              ].join('\n');
+            });
+
             const ok = process.env.PLAN_OUTCOME === 'success';
             const body = [
               marker,
               `### Terraform Plan: ${ok ? '✅ success' : '❌ failed'}`,
               '',
-              '<details><summary>Show plan</summary>',
+              rows.map(([layer, status]) => `${icons[status] || '?'} \`${layer}\` ${status}`).join(' · ') || '(no plan output)',
               '',
-              '```terraform',
-              plan,
-              '```',
+              '_Layers whose upstream layers are not deployed yet are skipped; they cannot be planned until the upstream layers are applied._',
               '',
-              '</details>',
+              ...sections,
               '',
               `_Commit: ${context.sha.slice(0, 7)}_`,
             ].join('\n');

@@ -32,11 +32,9 @@ jobs:
     # Requires typing "destroy" and can only run from the main branch
     if: ${{ inputs.confirm == 'destroy' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    # Same environment as apply: Required reviewers can add a second approval
+    # Same environment as apply: Required reviewers can add a second approval.
+    # All layers run as steps of this one job so the whole destroy needs a single approval.
     environment: production
-    defaults:
-      run:
-        working-directory: envs/demo
     steps:
       - uses: actions/checkout@v4
 
@@ -50,11 +48,35 @@ jobs:
           role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: terraform init
-        run: terraform init -input=false
+      # Reverse of the apply order. workloads must go before compute: the
+      # kubernetes provider needs the cluster to still exist.
+      # A destroy plan still reads the remote state of the layers it depends on,
+      # which is why network and compute are destroyed last.
 
-      - name: terraform plan -destroy
-        run: terraform plan -destroy -no-color -input=false -out=tfplan-destroy
+      - name: destroy edge
+        working-directory: envs/demo/edge
+        run: |
+          terraform init -input=false
+          terraform plan -destroy -no-color -input=false -out=tfplan-destroy
+          terraform apply -no-color -input=false tfplan-destroy
 
-      - name: terraform apply (destroy)
-        run: terraform apply -no-color -input=false tfplan-destroy
+      - name: destroy workloads
+        working-directory: envs/demo/workloads
+        run: |
+          terraform init -input=false
+          terraform plan -destroy -no-color -input=false -out=tfplan-destroy
+          terraform apply -no-color -input=false tfplan-destroy
+
+      - name: destroy compute
+        working-directory: envs/demo/compute
+        run: |
+          terraform init -input=false
+          terraform plan -destroy -no-color -input=false -out=tfplan-destroy
+          terraform apply -no-color -input=false tfplan-destroy
+
+      - name: destroy network
+        working-directory: envs/demo/network
+        run: |
+          terraform init -input=false
+          terraform plan -destroy -no-color -input=false -out=tfplan-destroy
+          terraform apply -no-color -input=false tfplan-destroy
