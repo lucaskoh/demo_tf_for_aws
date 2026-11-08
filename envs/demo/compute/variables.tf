@@ -10,7 +10,7 @@ variable "region" {
 }
 
 variable "name" {
-  description = "Short name prefix for resources (lowercase letters, digits, hyphens; max 20 characters)"
+  description = "Short name prefix for resources (lowercase letters, digits, hyphens; max 20 characters). Must match the network layer."
   type        = string
   default     = "demo"
 
@@ -20,45 +20,16 @@ variable "name" {
   }
 }
 
-variable "domain_name" {
-  description = "Name of an existing public Route 53 hosted zone (e.g. example.com). Empty = no DNS record; use the NLB DNS name instead."
+variable "state_bucket" {
+  description = "S3 bucket that holds the Terraform state of the other layers (state_bucket_name output of bootstrap)"
   type        = string
-  default     = ""
-}
-
-variable "record_name" {
-  description = "Subdomain for the demo (demo -> demo.example.com). Only used when domain_name is set."
-  type        = string
-  default     = "demo"
-
-  validation {
-    condition     = length(var.record_name) > 0
-    error_message = "record_name must not be empty (is the RECORD_NAME GitHub variable set?)."
-  }
-}
-
-variable "vpc_a_cidr" {
-  description = "CIDR of VPC-A (NLB, ALB, EKS). Must not overlap with VPC-B."
-  type        = string
-  default     = "10.0.0.0/16"
-}
-
-variable "vpc_b_cidr" {
-  description = "CIDR of VPC-B (EC2). Must not overlap with VPC-A."
-  type        = string
-  default     = "10.1.0.0/16"
+  default     = "lucaskoh-tfstate-demo-22f4d2"
 }
 
 variable "ec2_private_ip" {
   description = "Fixed private IP of the EC2 instance. null = the .100 address of the VPC-B subnet."
   type        = string
   default     = null
-}
-
-variable "node_port" {
-  description = "Kubernetes NodePort used between the ALB and the EKS nodes"
-  type        = number
-  default     = 30080
 }
 
 variable "kubernetes_version" {

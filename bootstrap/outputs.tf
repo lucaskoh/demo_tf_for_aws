@@ -1,5 +1,5 @@
 output "state_bucket_name" {
-  description = "Use this as `bucket` in envs/demo/backend.tf"
+  description = "Use this as `bucket` in envs/demo/*/backend.tf (and as the `state_bucket` default of the compute, workloads and edge layers)"
   value       = aws_s3_bucket.state.id
 }
 
