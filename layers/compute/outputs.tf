@@ -1,9 +1,9 @@
 # This file is the interface of the compute layer: the workloads and edge
 # layers read these values through terraform_remote_state.
 
-output "ec2_private_ip" {
-  description = "Private IP of the EC2 backend (ALB target)"
-  value       = module.ec2.private_ip
+output "ec2_private_ips" {
+  description = "Private IP of each ec2 backend, keyed by backend name (ALB targets)"
+  value       = { for k, m in module.ec2 : k => m.private_ip }
 }
 
 output "eks_cluster_name" {

@@ -1,12 +1,11 @@
 locals {
-  index_html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>${var.page_title}</title></head><body><h1>${var.page_heading}</h1><img src=\"${var.image_url}\" alt=\"${var.image_alt}\" width=\"200\"></body></html>"
-  labels     = { app = var.name }
-
-  # The Nginx image listens on port 80 (fixed by the image)
-  container_port = 80
+  labels = { app = var.name }
 }
 
-resource "kubernetes_config_map_v1" "html" {
+# Only when a static file is mounted (the demo page)
+resource "kubernetes_config_map_v1" "static" {
+  count = var.static_file != null ? 1 : 0
+
   metadata {
     name      = var.name
     namespace = var.namespace
@@ -14,11 +13,11 @@ resource "kubernetes_config_map_v1" "html" {
   }
 
   data = {
-    "index.html" = local.index_html
+    "file" = var.static_file.content
   }
 }
 
-resource "kubernetes_deployment_v1" "nginx" {
+resource "kubernetes_deployment_v1" "app" {
   metadata {
     name      = var.name
     namespace = var.namespace
@@ -36,32 +35,36 @@ resource "kubernetes_deployment_v1" "nginx" {
       metadata {
         labels = local.labels
 
-        annotations = {
-          # Restart the pod when the page content changes
-          "checksum/html" = sha256(local.index_html)
-        }
+        # Restart the pods when the mounted file changes
+        annotations = var.static_file != null ? {
+          "checksum/static-file" = sha256(var.static_file.content)
+        } : {}
       }
 
       spec {
         container {
-          name  = "nginx"
+          name  = "app"
           image = var.image
 
           port {
-            container_port = local.container_port
+            container_port = var.container_port
           }
 
-          volume_mount {
-            name       = "html"
-            mount_path = "/usr/share/nginx/html/${var.path_prefix}/index.html"
-            sub_path   = "index.html"
-            read_only  = true
+          dynamic "volume_mount" {
+            for_each = var.static_file != null ? [var.static_file] : []
+
+            content {
+              name       = "static-file"
+              mount_path = volume_mount.value.mount_path
+              sub_path   = "file"
+              read_only  = true
+            }
           }
 
           readiness_probe {
             http_get {
-              path = "/${var.path_prefix}/index.html"
-              port = local.container_port
+              path = var.health_check_path
+              port = var.container_port
             }
 
             initial_delay_seconds = 2
@@ -80,11 +83,15 @@ resource "kubernetes_deployment_v1" "nginx" {
           }
         }
 
-        volume {
-          name = "html"
+        dynamic "volume" {
+          for_each = var.static_file != null ? [1] : []
 
-          config_map {
-            name = kubernetes_config_map_v1.html.metadata[0].name
+          content {
+            name = "static-file"
+
+            config_map {
+              name = kubernetes_config_map_v1.static[0].metadata[0].name
+            }
           }
         }
       }
@@ -92,7 +99,7 @@ resource "kubernetes_deployment_v1" "nginx" {
   }
 }
 
-resource "kubernetes_service_v1" "nginx" {
+resource "kubernetes_service_v1" "app" {
   metadata {
     name      = var.name
     namespace = var.namespace
@@ -105,7 +112,7 @@ resource "kubernetes_service_v1" "nginx" {
 
     port {
       port        = var.service_port
-      target_port = local.container_port
+      target_port = var.container_port
       node_port   = var.node_port
     }
   }

@@ -1,11 +1,6 @@
-output "demo_url_eks" {
-  description = "Page served by Nginx on EKS (VPC-A)"
-  value       = "http://${local.demo_host}/html1"
-}
-
-output "demo_url_ec2" {
-  description = "Page served by Nginx on EC2 (VPC-B, via VPC Peering)"
-  value       = "http://${local.demo_host}/html2"
+output "backend_urls" {
+  description = "URL of each backend, keyed by backend name"
+  value       = { for k, b in local.network.backends : k => "http://${local.demo_host}/${b.path}" }
 }
 
 output "nlb_dns_name" {

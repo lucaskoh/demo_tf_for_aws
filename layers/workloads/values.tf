@@ -6,5 +6,4 @@ locals {
 
   region       = local.common.region
   state_bucket = local.common.state_bucket
-  eks_path     = local.common.app_paths.eks
 }
