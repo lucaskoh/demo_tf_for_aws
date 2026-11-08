@@ -6,12 +6,12 @@
 
 A low-cost, reproducible reference architecture that serves **two backends living in two different VPCs** behind a single entry point, using **NLB → ALB → path-based routing**, **VPC Peering**, and **Security Group chaining**.
 
-The backends are declared in `values.yaml` (see [Backends](#backends)). The demo declares two:
+The workloads, instances and routes are declared in `values.yaml` (see [Workloads, instances and backends](#workloads-instances-and-backends)). The demo declares two:
 
 - `/html1` → Nginx running on **Amazon EKS** (VPC-A, Spot node)
 - `/html2` → Nginx running on **Amazon EC2** (VPC-B, reached over VPC Peering)
 
-You can declare more of each kind, and an EKS backend can run your own container image.
+You can declare more of each kind, and an EKS workload can run your own container image.
 
 Everything is provisioned with Terraform and can be created and destroyed in minutes. No NAT Gateway and no Transit Gateway, so a 2-hour test costs well under a dollar.
 
@@ -115,11 +115,11 @@ EKS nodes and the EC2 instance sit in public subnets (they need outbound interne
 
 | Security Group | Attached to | Inbound | Outbound |
 |---|---|---|---|
-| `alb-sg` | ALB | `0.0.0.0/0` → TCP 80 | EKS nodes (NodePort of each eks backend), `10.1.0.0/16` (when there is an ec2 backend) |
-| `eks-node-sg` | EKS worker nodes | **Only** `alb-sg` → the NodePort of each eks backend | All |
+| `alb-sg` | ALB | `0.0.0.0/0` → TCP 80 | EKS nodes (NodePort of each routed workload), `10.1.0.0/16` (when an instance is routed) |
+| `eks-node-sg` | EKS worker nodes | **Only** `alb-sg` → the NodePort of each routed workload | All |
 | `ec2-sg` | VPC-B EC2 | **Only** `10.0.0.0/16` → TCP 80 | All |
 
-Direct requests to a node's or the EC2 instance's public IP are dropped. The rules are generated from the declared backends; nobody writes them by hand.
+Direct requests to a node's or the EC2 instance's public IP are dropped. The rules are generated from what is routed; nobody writes them by hand.
 
 ---
 
@@ -270,6 +270,80 @@ The layers use a partial S3 backend. `scripts/tf.sh` passes the bucket, region a
 | `network.vpc_a_cidr` | `10.0.0.0/16` | CIDR of VPC-A |
 | `network.vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B (must not overlap VPC-A) |
 | `common.http_port` | `80` | Port of the NLB and ALB listeners, and of Nginx on the EC2 backend |
+| `compute.ec2_instance_type` | `t3.micro` | Default instance type of the instances (an instance can override it) |
+| `compute.eks` | Spot `t3.small`/`t3a.small`, 1 node (max 2) | Node group: `instance_types`, `capacity_type`, `desired_size`, `min_size`, `max_size` |
+| `compute.kubernetes_version` | `null` | EKS version. `null` = the EKS default for new clusters |
+
+### Workloads, instances and backends
+
+`values.yaml` separates *what runs* from *how traffic reaches it*:
+
+- `workloads:` are Deployments on the EKS cluster (image, replicas, ports).
+- `instances:` are Nginx instances in VPC-B (instance type, IP).
+- `backends:` are pure routes: a path on the ALB that leads to one workload or one instance. Nothing else.
+
+The platform creates the pods or instances, the target groups, the routes and the security group rules. Nobody writes a security group rule or picks a NodePort.
+
+```yaml
+workloads:
+  web:                      # no image: the built-in Nginx demo page is served
+    replicas: 2
+  api:
+    image: hashicorp/http-echo:1.0
+    container_port: 5678
+    health_check_path: /api
+  worker:                   # no backend routes to it: a ClusterIP Service, no NodePort, no rules
+    image: busybox:1.36
+
+instances:
+  legacy: {}
+  reports:
+    instance_type: t3.small
+
+backends:
+  home:    { path: home,    workload: web }
+  landing: { path: landing, workload: web }       # a second path to the same workload
+  api:     { path: api,     workload: api }
+  legacy:  { path: legacy,  instance: legacy }
+  reports: { path: reports, instance: reports }
+```
+
+Names are lowercase letters, digits and hyphens. `<common.name>-<backend name>-tg` must fit in 32 characters (target group name limit).
+
+**Workload fields** (all optional)
+
+| Field | Default | Description |
+|---|---|---|
+| `image` | none | Container image. Without it the built-in Nginx demo page is served at every path that routes to the workload |
+| `container_port` | `80` | Port the container listens on (the demo page needs `80`) |
+| `replicas` | `1` | Number of pods |
+| `health_check_path` | `/` | Readiness probe. For a custom image it is also the default ALB health check |
+| `node_port` | derived from the name | NodePort (30000-32767). Only workloads that a backend routes to get one |
+| `page_title`, `page_heading` | from the name | Texts of the demo page (no `<`, `>`, `"` or line breaks) |
+
+**Instance fields** (all optional): `instance_type` (default `compute.ec2_instance_type`), `private_ip` (derived from the name; must be inside the VPC-B subnet), `page_title`, `page_heading`.
+
+**Backend fields**: `path` (required, one URL segment without slashes) and exactly one of `workload` or `instance` (required); optional `health_check_path` (ALB health check; default `/<path>/index.html` for the demo page) and `priority` (ALB rule priority 1-50000, derived from the name). The ALB forwards `/<path>` and `/<path>/*` without rewriting, so a custom image must serve under that prefix.
+
+The NodePort, the private IP and the priority are derived from the name with a hash, so adding or removing something never changes the numbers of the others. If two get the same number, `plan` fails with a message that names them; set the field on one of them. The network layer resolves everything once and publishes it as its `workloads`, `instances` and `backends` outputs; the other layers read those.
+
+An Auto Scaling Group can be attached to a limited number of target groups (10 by default), which limits the number of backends that point to workloads.
+
+**Variables** hold the values that come from outside the repository: set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables and secrets.
+
+The layers use a partial S3 backend. `scripts/tf.sh` passes the bucket, region and state key to `terraform init` with `-backend-config`, taking the bucket and region from `common.state_bucket` and `common.region`, so `values.yaml` is the only place that has them. These two keys must stay flat under `common:` because the script reads them with `awk`, not with a YAML parser.
+
+**`values.yaml`**
+
+| Key | Default | Description |
+|---|---|---|
+| `common.name` | `demo` | Name prefix for resources (1-20 chars: lowercase letters, digits, hyphens) |
+| `common.region` | `ap-northeast-1` | AWS region |
+| `common.state_bucket` | *(bucket name)* | State bucket, used to read the other layers' state |
+| `common.tags` | Project, Environment, ManagedBy | Default tags on every resource; each layer adds a `Layer` tag |
+| `network.vpc_a_cidr` | `10.0.0.0/16` | CIDR of VPC-A |
+| `network.vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B (must not overlap VPC-A) |
+| `common.http_port` | `80` | Port of the NLB and ALB listeners, and of Nginx on the EC2 backend |
 | `compute.ec2_instance_type` | `t3.micro` | Default instance type of the ec2 backends (a backend can override it) |
 | `compute.eks` | Spot `t3.small`/`t3a.small`, 1 node (max 2) | Node group: `instance_types`, `capacity_type`, `desired_size`, `min_size`, `max_size` |
 | `compute.kubernetes_version` | `null` | EKS version. `null` = the EKS default for new clusters |
@@ -361,8 +435,8 @@ The key is `aws-multi-vpc/<environment>/<layer>/terraform.tfstate`; the table sh
 
 | Layer | State key | Reads | Provides |
 |---|---|---|---|
-| `network` | `aws-multi-vpc/demo/network/terraform.tfstate` | nothing | VPC and subnet IDs, security group IDs, the resolved `backends` |
-| `compute` | `aws-multi-vpc/demo/compute/terraform.tfstate` | `network` | EC2 private IPs per backend, EKS cluster endpoint/CA/ASG name, S3 object URLs |
+| `network` | `aws-multi-vpc/demo/network/terraform.tfstate` | nothing | VPC and subnet IDs, security group IDs, the resolved `workloads`, `instances` and `backends` |
+| `compute` | `aws-multi-vpc/demo/compute/terraform.tfstate` | `network` | EC2 private IPs per instance, EKS cluster endpoint/CA/ASG name, S3 object URLs |
 | `workloads` | `aws-multi-vpc/demo/workloads/terraform.tfstate` | `network`, `compute` | nothing |
 | `edge` | `aws-multi-vpc/demo/edge/terraform.tfstate` | `network`, `compute` | URL of each backend, NLB/ALB DNS names |
 

@@ -39,10 +39,10 @@ module "s3_assets" {
   }
 }
 
-# One instance per ec2 backend (the numbers come from the network layer)
+# One instance per entry under instances: (the numbers come from the network layer)
 module "ec2" {
   source   = "../../modules/ec2-nginx"
-  for_each = local.ec2_backends
+  for_each = local.instances
 
   name               = "${local.name}-${each.key}"
   subnet_id          = local.network.vpc_b_public_subnet_ids_by_key["b-1"]
@@ -50,7 +50,7 @@ module "ec2" {
   security_group_ids = [local.network.ec2_sg_id]
   instance_type      = coalesce(each.value.instance_type, local.ec2_instance_type)
   http_port          = local.http_port
-  path_prefix        = each.value.path
+  path_prefixes      = each.value.paths
 
   page_html = trimspace(templatefile("${path.module}/../../templates/demo-page.html.tftpl", {
     title     = each.value.page_title

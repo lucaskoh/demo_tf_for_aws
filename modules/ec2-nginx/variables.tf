@@ -59,18 +59,19 @@ variable "http_port" {
   }
 }
 
-variable "path_prefix" {
-  description = "Path (without slashes) under which the page is served, e.g. html2 -> /html2/index.html"
-  type        = string
+variable "path_prefixes" {
+  description = "Paths (without slashes) under which the page is served, e.g. html2 -> /html2/index.html. The same page is written to every path. Empty = no page."
+  type        = list(string)
+  default     = []
 
   validation {
-    condition     = can(regex("^[A-Za-z0-9._-]+$", var.path_prefix))
-    error_message = "path_prefix must contain only letters, digits, dots, underscores and hyphens (no slashes)."
+    condition     = alltrue([for p in var.path_prefixes : can(regex("^[A-Za-z0-9._-]+$", p))])
+    error_message = "Each path prefix must contain only letters, digits, dots, underscores and hyphens (no slashes)."
   }
 }
 
 variable "page_html" {
-  description = "HTML of the page served at /<path_prefix>/index.html. Must be a single line (it is written from user_data)."
+  description = "HTML of the page served at /<path>/index.html for every path in path_prefixes. Must be a single line (it is written from user_data)."
   type        = string
 
   validation {

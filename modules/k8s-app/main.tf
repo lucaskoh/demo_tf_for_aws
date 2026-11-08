@@ -51,11 +51,11 @@ resource "kubernetes_deployment_v1" "app" {
           }
 
           dynamic "volume_mount" {
-            for_each = var.static_file != null ? [var.static_file] : []
+            for_each = var.static_file != null ? var.static_file.mount_paths : []
 
             content {
               name       = "static-file"
-              mount_path = volume_mount.value.mount_path
+              mount_path = volume_mount.value
               sub_path   = "file"
               read_only  = true
             }
@@ -107,7 +107,7 @@ resource "kubernetes_service_v1" "app" {
   }
 
   spec {
-    type     = "NodePort"
+    type     = var.node_port != null ? "NodePort" : "ClusterIP"
     selector = local.labels
 
     port {

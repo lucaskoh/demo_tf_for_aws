@@ -35,13 +35,14 @@ locals {
   network = data.terraform_remote_state.network.outputs
   compute = data.terraform_remote_state.compute.outputs
 
-  eks_backends = { for k, b in local.network.backends : k => b if b.type == "eks" }
+  workloads = local.network.workloads
 }
 
-# One Deployment + Service per eks backend (the numbers come from the network layer)
+# One Deployment + Service per entry under workloads: (the numbers come from the
+# network layer). A workload that no backend routes to gets a ClusterIP Service.
 module "app" {
   source   = "../../modules/k8s-app"
-  for_each = local.eks_backends
+  for_each = local.workloads
 
   # "app-" avoids clashes with built-in objects such as the "kubernetes" Service
   name              = "app-${each.key}"
@@ -51,9 +52,9 @@ module "app" {
   replicas          = each.value.replicas
   health_check_path = each.value.health_check_path
 
-  # No image: serve the built-in demo page with Nginx
+  # No image: serve the built-in demo page with Nginx, at every routed path
   static_file = each.value.image == null ? {
-    mount_path = "/usr/share/nginx/html/${each.value.path}/index.html"
+    mount_paths = length(each.value.paths) > 0 ? [for p in each.value.paths : "/usr/share/nginx/html/${p}/index.html"] : ["/usr/share/nginx/html/index.html"]
     content = trimspace(templatefile("${path.module}/../../templates/demo-page.html.tftpl", {
       title     = each.value.page_title
       heading   = each.value.page_heading

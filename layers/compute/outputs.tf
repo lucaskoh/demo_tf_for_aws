@@ -2,7 +2,7 @@
 # layers read these values through terraform_remote_state.
 
 output "ec2_private_ips" {
-  description = "Private IP of each ec2 backend, keyed by backend name (ALB targets)"
+  description = "Private IP of each instance, keyed by instance name (ALB targets)"
   value       = { for k, m in module.ec2 : k => m.private_ip }
 }
 
