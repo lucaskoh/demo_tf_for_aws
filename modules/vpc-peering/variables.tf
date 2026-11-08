@@ -1,7 +1,6 @@
 variable "name" {
   description = "Name of the peering connection"
   type        = string
-  default     = "vpc-a-to-vpc-b"
 }
 
 variable "vpc_a_id" {
@@ -32,6 +31,12 @@ variable "vpc_a_cidr" {
 variable "vpc_b_cidr" {
   description = "CIDR block of VPC-B (must not overlap with VPC-A)"
   type        = string
+}
+
+variable "auto_accept" {
+  description = "Accept the peering automatically (only works within the same account and region)"
+  type        = bool
+  default     = true
 }
 
 variable "tags" {

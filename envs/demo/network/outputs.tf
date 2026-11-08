@@ -29,17 +29,17 @@ output "vpc_b_subnet_cidr" {
 
 output "alb_sg_id" {
   description = "Security group ID for the ALB"
-  value       = module.security_groups.alb_sg_id
+  value       = module.sg_alb.security_group_id
 }
 
 output "eks_node_sg_id" {
   description = "Security group ID for the EKS worker nodes"
-  value       = module.security_groups.eks_node_sg_id
+  value       = module.sg_eks_node.security_group_id
 }
 
 output "ec2_sg_id" {
   description = "Security group ID for the EC2 backend"
-  value       = module.security_groups.ec2_sg_id
+  value       = module.sg_ec2.security_group_id
 }
 
 output "node_port" {

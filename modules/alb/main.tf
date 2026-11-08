@@ -1,126 +1,99 @@
+locals {
+  # Targets that are registered one by one: "<group key>-<index>" => target
+  ip_targets = merge([
+    for k, tg in var.target_groups : {
+      for i, ip in tg.ip_targets : "${k}-${i}" => { group = k, ip = ip }
+    }
+  ]...)
+
+  # Groups backed by an Auto Scaling Group
+  asg_groups = { for k, tg in var.target_groups : k => tg if tg.target_type == "instance" }
+}
+
 resource "aws_lb" "this" {
   name                       = "${var.name}-alb"
   load_balancer_type         = "application"
   internal                   = var.internal
   security_groups            = [var.sg_id]
   subnets                    = var.subnet_ids
-  drop_invalid_header_fields = true
+  drop_invalid_header_fields = var.drop_invalid_header_fields
 
   tags = merge(var.tags, { Name = "${var.name}-alb" })
 }
 
-# ---------------------------------------------------------------------------
-# Listener: anything that is not /html1 or /html2 gets a 404 with a hint
-# ---------------------------------------------------------------------------
-resource "aws_lb_listener" "http" {
+# Requests that match no rule get the fixed default response
+resource "aws_lb_listener" "this" {
   load_balancer_arn = aws_lb.this.arn
-  port              = 80
-  protocol          = "HTTP"
+  port              = var.listener_port
+  protocol          = var.listener_protocol
 
   default_action {
     type = "fixed-response"
 
     fixed_response {
-      content_type = "text/plain"
-      message_body = "Not found. Try /html1 (EKS) or /html2 (EC2)."
-      status_code  = "404"
+      content_type = var.default_response.content_type
+      message_body = var.default_response.message_body
+      status_code  = var.default_response.status_code
     }
   }
 
   tags = var.tags
 }
 
-# ---------------------------------------------------------------------------
-# Target group 1: EKS worker nodes (instance targets on the NodePort)
-# ---------------------------------------------------------------------------
-resource "aws_lb_target_group" "eks" {
-  name        = "${var.name}-eks-tg"
-  port        = var.node_port
-  protocol    = "HTTP"
-  target_type = "instance"
-  vpc_id      = var.vpc_id
+resource "aws_lb_target_group" "this" {
+  for_each = var.target_groups
+
+  name        = "${var.name}-${each.key}-tg"
+  port        = each.value.port
+  protocol    = each.value.protocol
+  target_type = each.value.target_type
+  vpc_id      = var.vpc_id # also for IP targets that live in a peered VPC
 
   health_check {
-    path                = "/html1/index.html"
-    matcher             = "200"
-    interval            = 15
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
+    path                = each.value.health_check.path
+    matcher             = each.value.health_check.matcher
+    interval            = each.value.health_check.interval
+    timeout             = each.value.health_check.timeout
+    healthy_threshold   = each.value.health_check.healthy_threshold
+    unhealthy_threshold = each.value.health_check.unhealthy_threshold
   }
 
-  tags = merge(var.tags, { Name = "${var.name}-eks-tg" })
+  tags = merge(var.tags, { Name = "${var.name}-${each.key}-tg" })
 }
 
-# Registers every node of the managed node group automatically (including
-# Spot replacements), so the AWS Load Balancer Controller is not needed.
-resource "aws_autoscaling_attachment" "eks" {
-  autoscaling_group_name = var.eks_asg_name
-  lb_target_group_arn    = aws_lb_target_group.eks.arn
+# Registers every instance of the Auto Scaling Group automatically (including
+# replacements), so the AWS Load Balancer Controller is not needed.
+resource "aws_autoscaling_attachment" "this" {
+  for_each = local.asg_groups
+
+  autoscaling_group_name = each.value.autoscaling_group_name
+  lb_target_group_arn    = aws_lb_target_group.this[each.key].arn
 }
 
-# ---------------------------------------------------------------------------
-# Target group 2: EC2 in the peered VPC-B (IP target)
-# ---------------------------------------------------------------------------
-resource "aws_lb_target_group" "ec2" {
-  name        = "${var.name}-ec2-tg"
-  port        = 80
-  protocol    = "HTTP"
-  target_type = "ip"
-  vpc_id      = var.vpc_id # the target group lives in VPC-A, the IP target is in VPC-B
+resource "aws_lb_target_group_attachment" "this" {
+  for_each = local.ip_targets
 
-  health_check {
-    path                = "/html2/index.html"
-    matcher             = "200"
-    interval            = 15
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-  }
-
-  tags = merge(var.tags, { Name = "${var.name}-ec2-tg" })
-}
-
-resource "aws_lb_target_group_attachment" "ec2" {
-  target_group_arn  = aws_lb_target_group.ec2.arn
-  target_id         = var.ec2_private_ip
-  port              = 80
+  target_group_arn  = aws_lb_target_group.this[each.value.group].arn
+  target_id         = each.value.ip
+  port              = var.target_groups[each.value.group].port
   availability_zone = "all" # required when the IP is outside the target group's VPC
 }
 
-# ---------------------------------------------------------------------------
 # Path-based routing
-# ---------------------------------------------------------------------------
-resource "aws_lb_listener_rule" "html1" {
-  listener_arn = aws_lb_listener.http.arn
-  priority     = 10
+resource "aws_lb_listener_rule" "this" {
+  for_each = var.target_groups
+
+  listener_arn = aws_lb_listener.this.arn
+  priority     = each.value.priority
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.eks.arn
+    target_group_arn = aws_lb_target_group.this[each.key].arn
   }
 
   condition {
     path_pattern {
-      values = ["/html1", "/html1/*"]
-    }
-  }
-
-  tags = var.tags
-}
-
-resource "aws_lb_listener_rule" "html2" {
-  listener_arn = aws_lb_listener.http.arn
-  priority     = 20
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.ec2.arn
-  }
-
-  condition {
-    path_pattern {
-      values = ["/html2", "/html2/*"]
+      values = each.value.path_patterns
     }
   }
 

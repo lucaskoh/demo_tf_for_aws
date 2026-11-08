@@ -6,7 +6,7 @@ data "aws_route53_zone" "this" {
 resource "aws_route53_record" "this" {
   zone_id = data.aws_route53_zone.this.zone_id
   name    = "${var.record_name}.${var.zone_name}"
-  type    = "A"
+  type    = var.record_type
 
   alias {
     name                   = var.alias_dns_name

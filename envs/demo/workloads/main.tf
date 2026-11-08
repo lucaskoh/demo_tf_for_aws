@@ -41,4 +41,7 @@ module "k8s_nginx" {
 
   image_url = local.compute.s3_object_urls["eks-logo.png"]
   node_port = local.network.node_port
+
+  name        = "nginx-${local.eks_path}"
+  path_prefix = local.eks_path
 }

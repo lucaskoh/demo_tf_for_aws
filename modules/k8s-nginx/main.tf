@@ -1,6 +1,9 @@
 locals {
-  index_html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>EKS</title></head><body><h1>Hello from EKS (VPC-A)</h1><img src=\"${var.image_url}\" alt=\"EKS logo\" width=\"200\"></body></html>"
+  index_html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>${var.page_title}</title></head><body><h1>${var.page_heading}</h1><img src=\"${var.image_url}\" alt=\"${var.image_alt}\" width=\"200\"></body></html>"
   labels     = { app = var.name }
+
+  # The Nginx image listens on port 80 (fixed by the image)
+  container_port = 80
 }
 
 resource "kubernetes_config_map_v1" "html" {
@@ -23,7 +26,7 @@ resource "kubernetes_deployment_v1" "nginx" {
   }
 
   spec {
-    replicas = 1
+    replicas = var.replicas
 
     selector {
       match_labels = local.labels
@@ -45,20 +48,20 @@ resource "kubernetes_deployment_v1" "nginx" {
           image = var.image
 
           port {
-            container_port = 80
+            container_port = local.container_port
           }
 
           volume_mount {
             name       = "html"
-            mount_path = "/usr/share/nginx/html/html1/index.html"
+            mount_path = "/usr/share/nginx/html/${var.path_prefix}/index.html"
             sub_path   = "index.html"
             read_only  = true
           }
 
           readiness_probe {
             http_get {
-              path = "/html1/index.html"
-              port = 80
+              path = "/${var.path_prefix}/index.html"
+              port = local.container_port
             }
 
             initial_delay_seconds = 2
@@ -67,12 +70,12 @@ resource "kubernetes_deployment_v1" "nginx" {
 
           resources {
             requests = {
-              cpu    = "50m"
-              memory = "32Mi"
+              cpu    = var.resources.cpu_request
+              memory = var.resources.memory_request
             }
 
             limits = {
-              memory = "128Mi"
+              memory = var.resources.memory_limit
             }
           }
         }
@@ -101,8 +104,8 @@ resource "kubernetes_service_v1" "nginx" {
     selector = local.labels
 
     port {
-      port        = 80
-      target_port = 80
+      port        = var.service_port
+      target_port = local.container_port
       node_port   = var.node_port
     }
   }

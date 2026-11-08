@@ -11,8 +11,8 @@ resource "aws_eks_cluster" "this" {
 
   vpc_config {
     subnet_ids              = var.subnet_ids
-    endpoint_public_access  = true
-    endpoint_private_access = false
+    endpoint_public_access  = var.endpoint_public_access
+    endpoint_private_access = var.endpoint_private_access
     public_access_cidrs     = var.public_access_cidrs
   }
 
@@ -36,7 +36,7 @@ resource "aws_launch_template" "node" {
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 2 # allow pods to reach IMDSv2
+    http_put_response_hop_limit = var.imds_hop_limit
   }
 
   tag_specifications {
@@ -48,12 +48,12 @@ resource "aws_launch_template" "node" {
 
 resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
-  node_group_name = "${var.cluster_name}-spot"
+  node_group_name = "${var.cluster_name}-${var.node_group_name_suffix}"
   node_role_arn   = aws_iam_role.node.arn
   subnet_ids      = var.subnet_ids
   capacity_type   = var.capacity_type
   instance_types  = var.instance_types
-  ami_type        = "AL2023_x86_64_STANDARD"
+  ami_type        = var.ami_type
 
   scaling_config {
     desired_size = var.desired_size
@@ -62,7 +62,7 @@ resource "aws_eks_node_group" "this" {
   }
 
   update_config {
-    max_unavailable = 1
+    max_unavailable = var.max_unavailable_nodes
   }
 
   launch_template {

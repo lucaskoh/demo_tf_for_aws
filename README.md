@@ -142,7 +142,7 @@ aws-multi-vpc-terraform/
 ├── modules/                  # reusable building blocks
 │   ├── vpc/
 │   ├── vpc-peering/
-│   ├── security-groups/
+│   ├── security-group/       # one generic security group + rules map (used 3 times)
 │   ├── s3-assets/
 │   ├── ec2-nginx/
 │   ├── eks/
@@ -261,6 +261,10 @@ Configuration comes from two places:
 | `network.vpc_a_cidr` | `10.0.0.0/16` | CIDR of VPC-A |
 | `network.vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B (must not overlap VPC-A) |
 | `network.node_port` | `30080` | Kubernetes NodePort between the ALB and the EKS nodes. Published as an output; the other layers use that value |
+| `common.http_port` | `80` | Port of the NLB and ALB listeners, and of Nginx on the EC2 backend |
+| `common.app_paths` | `eks: html1`, `ec2: html2` | Path (without slashes) of each demo page |
+| `compute.ec2_instance_type` | `t3.micro` | EC2 instance type |
+| `compute.eks` | Spot `t3.small`/`t3a.small`, 1 node (max 2) | Node group: `instance_types`, `capacity_type`, `desired_size`, `min_size`, `max_size` |
 | `compute.ec2_private_ip` | `null` | Fixed private IP of the EC2 instance. `null` = the `.100` address of the VPC-B subnet (`10.1.1.100`) |
 | `compute.kubernetes_version` | `null` | EKS version. `null` = the EKS default for new clusters |
 
@@ -427,13 +431,13 @@ terraform destroy -var="github_repo=<your-username>/aws-multi-vpc-terraform"
 
 ## Planned Architecture Changes
 
-> **Status:** items 1, 2, 3 and 5 are done (see [State layout](#state-layout) and [Configuration](#configuration)); item 4 is planned.
+> **Status:** items 1 to 5 are done (see [State layout](#state-layout) and [Configuration](#configuration)). The SSM Parameters step is a possible next one.
 
 1. ~~**Split state.**~~ *Done.* The single state file is replaced by four smaller ones, so a change in one area has a smaller blast radius and parts of the environment can be created or destroyed independently.
 2. ~~**Group by nature.**~~ *Done.* The code is grouped into `network`, `compute`, `workloads` and `edge`, each its own root module with its own state. Layers share values through `terraform_remote_state`; replacing that with SSM Parameters is a possible next step.
 3. ~~**Drive configuration with `yamldecode`.**~~ *Done.* Each layer reads `envs/demo/values.yaml` with `yamldecode(file(...))`; only values that come from GitHub variables remain Terraform variables.
-4. **Normalize the modules.** Except for the values a module genuinely needs to hard-code, every setting becomes a module input variable (with a `description`, a sensible default where possible, and a `validation` where a wrong value would fail late).
-5. ~~**Add a `values.yaml`.**~~ *Done.* The environment-specific values live in `envs/demo/values.yaml`, so the Terraform code stays generic and a new environment only needs a new values file. More settings (instance types, sizes) move there as the modules are normalized (item 4).
+4. ~~**Normalize the modules.**~~ *Done.* Modules no longer know about this demo: there is one generic `security-group` module (instead of one that created the ALB, EKS and EC2 groups), and ports, paths, health checks, sizes and instance types are inputs (with a `description`, a default and a `validation` where a wrong value would fail late). The `alb` module takes a map of target groups. Except for the values a module genuinely needs to hard-code, every setting becomes a module input variable (with a `description`, a sensible default where possible, and a `validation` where a wrong value would fail late).
+5. ~~**Add a `values.yaml`.**~~ *Done.* The environment-specific values live in `envs/demo/values.yaml`, so the Terraform code stays generic and a new environment only needs a new values file. Ports, page paths, instance types and node group sizes are there too.
 
 ---
 

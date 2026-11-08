@@ -76,6 +76,42 @@ variable "view_principal_arns" {
   default     = []
 }
 
+variable "ami_type" {
+  description = "AMI type of the node group"
+  type        = string
+  default     = "AL2023_x86_64_STANDARD"
+}
+
+variable "node_group_name_suffix" {
+  description = "Suffix of the node group name (<cluster_name>-<suffix>)"
+  type        = string
+  default     = "nodes"
+}
+
+variable "max_unavailable_nodes" {
+  description = "Maximum number of nodes that may be unavailable during a node group update"
+  type        = number
+  default     = 1
+}
+
+variable "endpoint_public_access" {
+  description = "Enable the public Kubernetes API endpoint"
+  type        = bool
+  default     = true
+}
+
+variable "endpoint_private_access" {
+  description = "Enable the private Kubernetes API endpoint (inside the VPC)"
+  type        = bool
+  default     = false
+}
+
+variable "imds_hop_limit" {
+  description = "IMDSv2 hop limit of the nodes. 2 lets pods reach the metadata service."
+  type        = number
+  default     = 2
+}
+
 variable "tags" {
   description = "Extra tags applied to every resource"
   type        = map(string)
