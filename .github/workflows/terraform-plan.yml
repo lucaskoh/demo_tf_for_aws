@@ -60,6 +60,8 @@ jobs:
         with:
           # The demo intentionally uses public subnets and a public S3 bucket, so findings only warn (soft_fail) and do not block merge
           soft_fail: true
+          # Without a token the action calls the GitHub API anonymously and is often rate-limited
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
   plan:
     name: plan
