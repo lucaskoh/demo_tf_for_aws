@@ -43,22 +43,48 @@ data "terraform_remote_state" "compute" {
 module "alb" {
   source = "../../../modules/alb"
 
-  name           = local.name
-  vpc_id         = local.network.vpc_a_id
-  subnet_ids     = local.network.vpc_a_public_subnet_ids
-  sg_id          = local.network.alb_sg_id
-  eks_asg_name   = local.compute.eks_node_group_asg_name
-  ec2_private_ip = local.compute.ec2_private_ip
-  node_port      = local.network.node_port
+  name          = local.name
+  vpc_id        = local.network.vpc_a_id
+  subnet_ids    = local.network.vpc_a_public_subnet_ids
+  sg_id         = local.network.alb_sg_id
+  listener_port = local.http_port
+
+  default_response = {
+    message_body = "Not found. Try /${local.eks_path} (EKS) or /${local.ec2_path} (EC2)."
+  }
+
+  target_groups = {
+    # EKS worker nodes (instance targets on the NodePort)
+    eks = {
+      port                   = local.network.node_port
+      target_type            = "instance"
+      autoscaling_group_name = local.compute.eks_node_group_asg_name
+      path_patterns          = ["/${local.eks_path}", "/${local.eks_path}/*"]
+      priority               = 10
+      health_check           = { path = "/${local.eks_path}/index.html" }
+    }
+
+    # EC2 in the peered VPC-B (IP target)
+    ec2 = {
+      port          = local.http_port
+      target_type   = "ip"
+      ip_targets    = [local.compute.ec2_private_ip]
+      path_patterns = ["/${local.ec2_path}", "/${local.ec2_path}/*"]
+      priority      = 20
+      health_check  = { path = "/${local.ec2_path}/index.html" }
+    }
+  }
 }
 
 module "nlb" {
   source = "../../../modules/nlb"
 
-  name       = local.name
-  vpc_id     = local.network.vpc_a_id
-  subnet_ids = local.network.vpc_a_public_subnet_ids
-  alb_arn    = module.alb.alb_arn
+  name          = local.name
+  vpc_id        = local.network.vpc_a_id
+  subnet_ids    = local.network.vpc_a_public_subnet_ids
+  alb_arn       = module.alb.alb_arn
+  listener_port = local.http_port
+  target_port   = local.http_port
 }
 
 # Optional: only created when domain_name is set

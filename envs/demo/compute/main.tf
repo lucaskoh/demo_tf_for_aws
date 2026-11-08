@@ -52,6 +52,9 @@ module "ec2" {
   private_ip         = local.ec2_private_ip
   security_group_ids = [local.network.ec2_sg_id]
   image_url          = module.s3_assets.object_urls["ec2-logo.png"]
+  instance_type      = local.ec2_instance_type
+  http_port          = local.http_port
+  path_prefix        = local.ec2_path
 }
 
 module "eks" {
@@ -63,5 +66,10 @@ module "eks" {
   node_sg_id           = local.network.eks_node_sg_id
   admin_principal_arns = local.eks_admin_principal_arns
   view_principal_arns  = local.eks_view_principal_arns
+  instance_types       = local.eks.instance_types
+  capacity_type        = local.eks.capacity_type
+  desired_size         = local.eks.desired_size
+  min_size             = local.eks.min_size
+  max_size             = local.eks.max_size
   tags                 = local.tags
 }

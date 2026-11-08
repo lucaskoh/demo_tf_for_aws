@@ -19,6 +19,12 @@ common:
     Project: aws-multi-vpc-terraform
     Environment: demo
     ManagedBy: terraform
+  # Port of the NLB and ALB listeners, and of Nginx on the EC2 backend
+  http_port: 80
+  # Path (without slashes) of each demo page: /<path> on the ALB, and the folder Nginx serves it from
+  app_paths:
+    eks: html1
+    ec2: html2
 
 network:
   # VPC CIDRs must not overlap (subnets are derived from them: /16 -> /24)
@@ -28,6 +34,14 @@ network:
   node_port: 30080
 
 compute:
+  ec2_instance_type: t3.micro
+  eks:
+    # Several instance types improve Spot availability
+    instance_types: [t3.small, t3a.small]
+    capacity_type: SPOT # SPOT or ON_DEMAND
+    desired_size: 1
+    min_size: 1
+    max_size: 2
   # Fixed private IP of the EC2 instance. null = the .100 address of the VPC-B subnet.
   ec2_private_ip: null
   # EKS Kubernetes version, e.g. "1.33" (quote it). null = the EKS default for new clusters.

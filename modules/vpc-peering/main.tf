@@ -1,7 +1,7 @@
 resource "aws_vpc_peering_connection" "this" {
   vpc_id      = var.vpc_a_id
   peer_vpc_id = var.vpc_b_id
-  auto_accept = true # same account + same region
+  auto_accept = var.auto_accept
 
   tags = merge(var.tags, { Name = var.name })
 }

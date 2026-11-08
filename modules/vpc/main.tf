@@ -1,7 +1,7 @@
 resource "aws_vpc" "this" {
   cidr_block           = var.cidr_block
-  enable_dns_support   = true
-  enable_dns_hostnames = true
+  enable_dns_support   = var.enable_dns_support
+  enable_dns_hostnames = var.enable_dns_hostnames
 
   tags = merge(var.tags, { Name = var.name })
 }
@@ -18,7 +18,7 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.this.id
   cidr_block              = each.value.cidr
   availability_zone       = each.value.az
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = var.map_public_ip_on_launch
 
   tags = merge(var.tags, { Name = "${var.name}-public-${each.key}" })
 }
@@ -33,7 +33,7 @@ resource "aws_route_table" "public" {
 # vpc-peering module (as standalone aws_route resources, so they do not conflict).
 resource "aws_route" "internet" {
   route_table_id         = aws_route_table.public.id
-  destination_cidr_block = "0.0.0.0/0"
+  destination_cidr_block = var.internet_route_cidr
   gateway_id             = aws_internet_gateway.this.id
 }
 

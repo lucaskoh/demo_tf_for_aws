@@ -11,6 +11,7 @@ locals {
   vpc_a_cidr = local.config.vpc_a_cidr
   vpc_b_cidr = local.config.vpc_b_cidr
   node_port  = local.config.node_port
+  http_port  = local.common.http_port
 
   # Overlap check (Terraform has no cidrcontains function): compare the first and
   # last address of each VPC CIDR as integers. Only evaluated for valid CIDRs.
