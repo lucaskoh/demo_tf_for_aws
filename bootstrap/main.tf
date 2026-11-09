@@ -158,9 +158,17 @@ data "aws_iam_policy_document" "state_access" {
   }
 
   statement {
-    # plan also acquires / releases the lock file, so Put / Delete is required
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    # read the state of the other layers (terraform_remote_state) and the lock files
+    actions   = ["s3:GetObject"]
     resources = ["${aws_s3_bucket.state.arn}/*"]
+  }
+
+  statement {
+    # plan acquires and releases the state lock, so it may write the lock files
+    # (<state key>.tflock), but never the state itself: a pull request runs the workflow
+    # of its own branch, and this role can be assumed by every pull request job
+    actions   = ["s3:PutObject", "s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.state.arn}/*.tflock"]
   }
 }
 
