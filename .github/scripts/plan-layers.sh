@@ -25,9 +25,10 @@ REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-$(scripts/common-value.sh "envs/$ENV
 
 # Number of parameters that a layer has published (0 = not applied, or destroyed).
 # A failure (no permission, no network) is an error, never "0": it must not look like "not deployed".
+# --no-paginate: with --max-items the CLI adds an empty last page and length() fails on it.
 published_count() {
   aws ssm get-parameters-by-path --region "$REGION" --path "/tf-platform/$ENV_NAME/$1" \
-    --max-items 1 --query 'length(Parameters)' --output text
+    --no-paginate --max-results 1 --query 'length(Parameters)' --output text
 }
 
 LAYERS=(network compute workloads edge)
