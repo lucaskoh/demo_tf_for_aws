@@ -57,7 +57,7 @@ flowchart TB
     end
 
     subgraph VPC_B["VPC-B - 10.1.0.0/16"]
-        ec2["EC2 t3.micro<br/>fixed private IP<br/>Nginx /html2"]
+        ec2["EC2 t3.micro<br/>private IP from AWS<br/>Nginx /html2"]
     end
 
     r53 --> nlb
@@ -70,7 +70,7 @@ flowchart TB
 2. The NLB forwards TCP :80 to the ALB (an `alb`-type target group).
 3. The ALB inspects the URL path and routes to the matching target group:
    - `/html1*` → EKS worker node on the NodePort of that backend
-   - `/html2*` → the EC2 instance of that backend in VPC-B (fixed private IP), over the VPC Peering connection
+   - `/html2*` → the EC2 instance of that backend in VPC-B (its private IP), over the VPC Peering connection
    - anything else → fixed `404` response
 4. Each page loads its image directly from S3.
 
@@ -88,7 +88,7 @@ flowchart TB
 | **Spot instances for EKS nodes** | Lowest-cost compute for a short-lived environment. |
 | **Layers shared by all environments** | The Terraform code lives once in `layers/`; an environment is a folder with only a `values.yaml`. Adding `staging` means copying that folder and editing the values. |
 | **Routes are separate from what runs** | `workloads`, `instances` and `backends` are different sections of `values.yaml`. A backend is only a path that leads to a workload or an instance, so one workload can have several paths, and a workload nobody routes to stays inside the cluster. |
-| **Numbers are derived, not chosen** | NodePorts, EC2 private IPs and ALB priorities come from a hash of the name, so adding or removing something never changes the others. Security group rules are generated from what is routed. |
+| **Numbers are derived, not chosen** | NodePorts and ALB priorities come from a hash of the name, so adding or removing something never changes the others. EC2 private IPs are not derived at all: AWS picks a free address, so they cannot collide. Security group rules are generated from what is routed. |
 | **EC2 instances come from image templates** | An instance names a template from `templates/ec2/` (AMI and boot script) maintained by the platform team; it cannot pick an arbitrary image or script. |
 
 ---
@@ -101,7 +101,7 @@ flowchart TB
 | ├ `vpc-a-public-1` | `10.0.1.0/24` | 1st AZ of the region | ALB/NLB node, EKS Spot node |
 | └ `vpc-a-public-2` | `10.0.2.0/24` | 2nd AZ of the region | ALB/NLB node (ALB requires 2 AZs) |
 | **VPC-B** | `10.1.0.0/16` | - | Standalone EC2 workload |
-| └ `vpc-b-public-1` | `10.1.1.0/24` | 1st AZ of the region | EC2 backends, each with a fixed IP in this subnet |
+| └ `vpc-b-public-1` | `10.1.1.0/24` | 1st AZ of the region | EC2 instances (AWS picks a free address, or you set one) |
 | **VPC Peering** | - | - | A route table: `10.1.0.0/16 → pcx`; B route table: `10.0.0.0/16 → pcx` |
 
 The two CIDR blocks do not overlap, which is required for VPC Peering.
@@ -348,11 +348,15 @@ Names are lowercase letters, digits and hyphens. `<common.name>-<backend name>-t
 | `node_port` | derived from the name | NodePort (30000-32767). Only workloads that a backend routes to get one |
 | `page_title`, `page_heading` | from the name | Texts of the demo page (no `<`, `>`, `"` or line breaks) |
 
-**Instance fields**: `template` (required, an [EC2 image template](#ec2-image-templates)); optional `instance_type` (default `compute.ec2_instance_type`), `private_ip` (derived from the name; must be inside the VPC-B subnet), `page_title`, `page_heading`.
+**Instance fields**: `template` (required, an [EC2 image template](#ec2-image-templates)); optional `instance_type` (default `compute.ec2_instance_type`), `private_ip` (default: AWS picks a free address of the VPC-B subnet; if you set one it must be inside the subnet and unique), `page_title`, `page_heading`.
 
 **Backend fields**: `path` (required, one URL segment without slashes) and exactly one of `workload` or `instance` (required); optional `health_check_path` (ALB health check; default `/<path>/index.html` for the demo page) and `priority` (ALB rule priority 1-50000, derived from the name). The ALB forwards `/<path>` and `/<path>/*` without rewriting, so a custom image must serve under that prefix.
 
-The NodePort, the private IP and the priority are derived from the name with a hash, so adding or removing something never changes the numbers of the others. **Renaming is different:** a new name is a new hash, which is the same as removing the old entry and adding a new one. The NodePort, the IP or the priority change, the resources are replaced, and the traffic to them is interrupted while that happens. To keep a number, set `node_port`, `private_ip` or `priority` explicitly (the resources are still replaced, because their names change). If two get the same number, `plan` fails with a message that names them; set the field on one of them. The network layer resolves everything once and publishes it as its `workloads`, `instances` and `backends` outputs; the other layers read those.
+The NodePort and the priority are derived from the name with a hash, so adding or removing something never changes the numbers of the others. **Renaming is different:** a new name is a new hash, which is the same as removing the old entry and adding a new one. The NodePort or the priority change, the resources are replaced, and the traffic to them is interrupted while that happens. To keep a number, set `node_port` or `priority` explicitly (the resources are still replaced, because their names change).
+
+If two entries get the same NodePort or priority (by chance, or because you set the same one twice), `plan` fails and tells you which entry to change and offers a free value, for example `workload 'beta': node_port: 30683`. It does not move a number by itself, because that would change a service that is already running. The chance is small: at most 10 workloads can be routed, which is about 1.6% for a collision among 10, and about 0.1% for 10 backends among 50000 priorities.
+
+**The private IP of an instance is not derived.** By default AWS picks a free address of the VPC-B subnet when the instance is created, so two instances cannot collide however many there are (a hash over the 240 usable addresses collides with a 17% chance already at 10 instances). The edge layer reads the real address that the compute layer publishes after the instance exists. Two things follow: the address is only known after `apply`, and **if an instance is replaced it gets a new address**, so the edge layer has to be applied again (the Apply workflow applies all layers in order, so it does). Set `private_ip` only when you need a fixed address. The network layer resolves everything once and publishes it as its `workloads`, `instances` and `backends` outputs; the other layers read those.
 
 **Limit on backends that point to workloads:** every such backend gets its own target group on the Auto Scaling group of the EKS node group, and an Auto Scaling group can be attached to 10 target groups by default (AWS Service Quotas). So at most 10 backends can point to workloads, and two backends that point to the same workload count twice. `plan` fails with a clear message when there are more, instead of the apply failing in AWS. If you have raised the quota, raise `max_asg_target_groups` in `layers/network/backends.tf`.
 

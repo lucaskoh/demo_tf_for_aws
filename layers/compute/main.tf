@@ -39,7 +39,7 @@ module "ec2" {
 
   name               = "${local.name}-${each.key}"
   subnet_id          = local.network.vpc_b_public_subnet_ids_by_key["b-1"]
-  private_ip         = each.value.private_ip
+  private_ip         = each.value.private_ip # null = AWS picks a free address
   security_group_ids = [local.network.ec2_sg_id]
   instance_type      = coalesce(each.value.instance_type, local.ec2_instance_type)
 

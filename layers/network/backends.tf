@@ -44,7 +44,7 @@ locals {
     for k, i in local.instances_raw : k => {
       template      = try(i.template, null)
       instance_type = try(i.instance_type, null) # null = compute.ec2_instance_type
-      private_ip    = coalesce(try(i.private_ip, null), cidrhost(local.vpc_b_subnet_cidr, 10 + parseint(substr(md5(k), 0, 4), 16) % 240))
+      private_ip    = try(i.private_ip, null)    # null = chosen by AWS
       paths         = local.paths_by_instance[k]
       page_title    = coalesce(try(i.page_title, null), "EC2")
       page_heading  = coalesce(try(i.page_heading, null), "Hello from ${k} (EC2 in VPC-B via VPC Peering)")
@@ -59,9 +59,8 @@ locals {
       instance = try(b.instance, null)
       # ALB rule priority (1-50000), unique per listener
       priority = coalesce(try(b.priority, null), 1 + parseint(substr(md5(k), 0, 5), 16) % 49999)
-      # Port or IP of the target, copied from it for the edge layer
-      node_port  = try(local.workloads[b.workload].node_port, null)
-      private_ip = try(local.instances[b.instance].private_ip, null)
+      # NodePort of the target workload, copied from it for the edge layer
+      node_port = try(local.workloads[b.workload].node_port, null)
       # The demo page lives at /<path>/index.html; a custom image is checked at the
       # health_check_path of its workload (default /)
       health_check_path = coalesce(
@@ -110,8 +109,27 @@ locals {
   bad_prios = [for k, b in local.backends : k if b.priority < 1 || b.priority > 50000]
   dup_prios = distinct([for p in local.all_prios : p if length([for q in local.all_prios : q if q == p]) > 1])
 
+  # Same idea as node_port_fixes, for the ALB rule priority
+  priority_fixes = flatten([
+    for p in local.dup_prios : [
+      for k in slice(sort([for k, b in local.backends : k if b.priority == p]), 1, length([for k, b in local.backends : k if b.priority == p])) :
+      "backend '${k}': priority: ${[for n in range(1, 1001) : 1 + (parseint(substr(md5(k), 0, 5), 16) + n) % 49999 if !contains(local.all_prios, 1 + (parseint(substr(md5(k), 0, 5), 16) + n) % 49999)][0]}"
+    ]
+  ])
+
   node_ports = [for w in values(local.exposed_workloads) : w.node_port]
   dup_ports  = distinct([for p in local.node_ports : p if length([for q in local.node_ports : q if q == p]) > 1])
+
+  # When two entries get the same number, the first one by name keeps it and each of the others needs a
+  # new one. The message offers a free value for each, found by stepping on from the hash of its name
+  # (range() is limited to 1024 values; at most a few dozen numbers are in use, so 1000 candidates are plenty).
+  # (Failing loudly is deliberate: moving a number by itself would change a service that is already running.)
+  node_port_fixes = flatten([
+    for p in local.dup_ports : [
+      for k in slice(sort([for k, w in local.exposed_workloads : k if w.node_port == p]), 1, length([for k, w in local.exposed_workloads : k if w.node_port == p])) :
+      "workload '${k}': node_port: ${[for n in range(1, 1001) : 30000 + (parseint(substr(md5(k), 0, 6), 16) + n) % 2768 if !contains(local.node_ports, 30000 + (parseint(substr(md5(k), 0, 6), 16) + n) % 2768)][0]}"
+    ]
+  ])
   bad_ports = [
     for k, w in local.workloads : k
     if w.container_port < 1 || w.container_port > 65535 || (w.exposed && (w.node_port < 30000 || w.node_port > 32767))
@@ -130,14 +148,16 @@ locals {
     [for k, i in local.instances : k if !can(regex("^[^<>\"\\n\\r]*$", "${i.page_title}${i.page_heading}"))]
   )
 
-  # Instance IPs: well formed, inside the VPC-B subnet, unique
-  ec2_ips        = [for i in values(local.instances) : i.private_ip]
-  dup_ips        = distinct([for p in local.ec2_ips : p if length([for q in local.ec2_ips : q if q == p]) > 1])
-  malformed_ips  = [for k, i in local.instances : k if !can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}$", i.private_ip))]
-  subnet_b_first = sum([for i, o in split(".", cidrhost(local.vpc_b_subnet_cidr, 0)) : tonumber(o) * pow(256, 3 - i)])
-  subnet_b_size  = pow(2, 32 - tonumber(split("/", local.vpc_b_subnet_cidr)[1]))
+  # Instance IPs: only the ones that are set explicitly are checked (well formed, inside the VPC-B subnet,
+  # unique). The others are chosen by AWS.
+  fixed_ip_instances = { for k, i in local.instances : k => i if i.private_ip != null }
+  fixed_ips          = [for i in values(local.fixed_ip_instances) : i.private_ip]
+  dup_ips            = distinct([for p in local.fixed_ips : p if length([for q in local.fixed_ips : q if q == p]) > 1])
+  malformed_ips      = [for k, i in local.fixed_ip_instances : k if !can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}$", i.private_ip))]
+  subnet_b_first     = sum([for i, o in split(".", cidrhost(local.vpc_b_subnet_cidr, 0)) : tonumber(o) * pow(256, 3 - i)])
+  subnet_b_size      = pow(2, 32 - tonumber(split("/", local.vpc_b_subnet_cidr)[1]))
   outside_ips = [
-    for k, i in local.instances : k
+    for k, i in local.fixed_ip_instances : k
     if !contains(local.malformed_ips, k) && (
       sum([for n, o in split(".", i.private_ip) : tonumber(o) * pow(256, 3 - n)]) < local.subnet_b_first ||
       sum([for n, o in split(".", i.private_ip) : tonumber(o) * pow(256, 3 - n)]) >= local.subnet_b_first + local.subnet_b_size

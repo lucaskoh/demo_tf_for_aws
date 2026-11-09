@@ -65,7 +65,7 @@ instances:
     template: nginx-demo # required: an image template from templates/ec2/templates.yaml
     # Optional:
     #   instance_type: t3.micro        # default: compute.ec2_instance_type
-    #   private_ip: 10.1.1.100         # derived from the name when not set
+    #   private_ip: 10.1.1.100         # default: AWS picks a free address (it changes if the instance is replaced)
     #   page_title / page_heading
 
 # Routes on the ALB: a path that leads to one workload or one instance.

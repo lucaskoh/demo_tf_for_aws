@@ -9,8 +9,14 @@ variable "subnet_id" {
 }
 
 variable "private_ip" {
-  description = "Fixed private IP (must be inside the subnet CIDR), used as the ALB IP target"
+  description = "Fixed private IP inside the subnet CIDR. null = AWS picks a free address of the subnet (it then changes when the instance is replaced)."
   type        = string
+  default     = null
+
+  validation {
+    condition     = var.private_ip == null || can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}$", var.private_ip))
+    error_message = "private_ip must be null or an IPv4 address."
+  }
 }
 
 variable "security_group_ids" {
