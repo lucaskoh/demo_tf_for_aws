@@ -38,6 +38,10 @@ compute:
     desired_size: 1
     min_size: 1
     max_size: 2
+    # Who may reach the public Kubernetes API endpoint (optional, default ["0.0.0.0/0"]). Every request still
+    # needs an IAM identity with an EKS access entry. The workloads layer talks to the API from the CI runner:
+    # a narrower list also locks out the GitHub-hosted runners (use a self-hosted runner in an allowed range).
+    #   public_access_cidrs: ["203.0.113.10/32"]
   # EKS Kubernetes version, e.g. "1.33" (quote it). null = the EKS default for new clusters.
   kubernetes_version: null
 
