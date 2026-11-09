@@ -477,7 +477,11 @@ All layers run as steps of a single job, so one `production` approval covers the
    | `EKS_ADMIN_PRINCIPAL_ARNS` | *(optional)* JSON list of IAM users/roles that get cluster-admin on EKS, e.g. `["arn:aws:iam::123456789012:user/your-user"]`. Without it, only the CI roles can see Kubernetes resources (for example in the EKS console). |
 
 3. In **Settings → Environments**, create `production`, add **Required reviewers**, and restrict **Deployment branches** to `main`.
-4. In **Settings → Branches**, protect `main`: require a pull request, require the `validate` and `plan` checks to pass, and block direct pushes.
+4. In **Settings → Branches**, protect `main` with a branch protection rule:
+   - require a pull request before merging (0 required approvals when you work alone, because you cannot approve your own pull request),
+   - require the `validate` and `plan` status checks to pass (the workflow runs on every pull request, so these checks always exist),
+   - do not allow force pushes or deletion of the branch,
+   - **include administrators** ("Do not allow bypassing the above settings"). Without it the owner can still push directly to `main`; GitHub only prints a warning. If CI itself is broken, temporarily relax the rule in the settings to fix it.
 
 ### Security model
 
