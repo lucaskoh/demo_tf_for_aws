@@ -125,10 +125,8 @@ locals {
   state_log_prefix = "state-bucket"
 }
 
-# This bucket receives the access logs, so logging it too would write logs about the logs, forever. It is
-# encrypted with SSE-S3, for the same reason as the state bucket (see above).
+# This bucket receives the access logs, so logging it too would write logs about the logs, forever.
 # tfsec:ignore:aws-s3-enable-bucket-logging
-# tfsec:ignore:aws-s3-encryption-customer-key
 resource "aws_s3_bucket" "state_logs" {
   bucket = "${local.state_bucket_name}-logs"
 }
@@ -141,6 +139,8 @@ resource "aws_s3_bucket_public_access_block" "state_logs" {
   restrict_public_buckets = true
 }
 
+# SSE-S3 for the same reason as for the state bucket (see above).
+# tfsec:ignore:aws-s3-encryption-customer-key
 resource "aws_s3_bucket_server_side_encryption_configuration" "state_logs" {
   bucket = aws_s3_bucket.state_logs.id
 
