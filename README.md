@@ -294,7 +294,7 @@ The layers use a partial S3 backend. `scripts/tf.sh` passes the bucket, region a
 | `network.vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B (must not overlap VPC-A) |
 | `common.http_port` | `80` | Port of the NLB and ALB listeners, and of Nginx on the EC2 instances |
 | `compute.ec2_instance_type` | `t3.micro` | Default instance type of the instances (an instance can override it) |
-| `compute.eks` | Spot `t3.small`/`t3a.small`, 1 node (max 2) | Node group: `instance_types`, `capacity_type`, `desired_size`, `min_size`, `max_size` |
+| `compute.eks` | Spot `t3.small`/`t3a.small`, 1 node (max 2) | Node group: `instance_types`, `capacity_type`, `desired_size`, `min_size`, `max_size`; optional `public_access_cidrs` (who may reach the Kubernetes API endpoint, default `0.0.0.0/0`, see [Limitations](#limitations)) |
 | `compute.kubernetes_version` | `null` | EKS version. `null` = the EKS default for new clusters |
 
 ### Workloads, instances and backends
@@ -541,7 +541,7 @@ Remember to destroy the environment when you are done (the Terraform Destroy wor
 This project is a **learning / demo environment**, not a production blueprint.
 
 - **HTTP only.** To enable HTTPS, add an ACM certificate and a port 443 listener to the ALB.
-- **Public EKS API endpoint.** It is open to `0.0.0.0/0` (CI runners need it); restrict `public_access_cidrs` in the `eks` module for real use.
+- **Public EKS API endpoint.** By default it accepts connections from `0.0.0.0/0`. Every request still needs an IAM identity that has an EKS access entry (the cluster uses access entries only, and the creator does not get admin rights automatically), so an open endpoint is not an open cluster, but it is a larger attack surface than necessary. It is open because the `workloads` layer talks to the Kubernetes API from the CI runner, and the addresses of GitHub-hosted runners are many and change. To narrow it, set `compute.eks.public_access_cidrs` in `values.yaml`. That locks out the GitHub-hosted runners too, so combine it with a self-hosted runner inside an allowed range, or with a private endpoint (`endpoint_private_access` of the `eks` module) and a runner that can reach the VPC. None of that is set up here.
 - **Public subnets for compute.** Chosen to avoid NAT Gateway cost. Production workloads should use private subnets.
 - **Public S3 bucket** for demo images. For production, use CloudFront with Origin Access Control.
 - **Spot nodes** can be reclaimed at any time.

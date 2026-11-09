@@ -81,5 +81,6 @@ module "eks" {
   desired_size         = local.eks.desired_size
   min_size             = local.eks.min_size
   max_size             = local.eks.max_size
+  public_access_cidrs  = try(local.eks.public_access_cidrs, ["0.0.0.0/0"]) # same default as the module
   tags                 = local.tags
 }

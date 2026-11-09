@@ -80,7 +80,13 @@
             "capacity_type": { "description": "SPOT or ON_DEMAND.", "enum": ["SPOT", "ON_DEMAND"] },
             "desired_size": { "description": "Desired number of nodes.", "type": "integer", "minimum": 0 },
             "min_size": { "description": "Minimum number of nodes.", "type": "integer", "minimum": 0 },
-            "max_size": { "description": "Maximum number of nodes.", "type": "integer", "minimum": 1 }
+            "max_size": { "description": "Maximum number of nodes.", "type": "integer", "minimum": 1 },
+            "public_access_cidrs": {
+              "description": "CIDR blocks that may reach the public Kubernetes API endpoint. Optional, default [\"0.0.0.0/0\"] (open, but every request still needs an IAM identity that has an EKS access entry). The workloads layer talks to the API from the CI runner, so a narrower list also locks out the GitHub-hosted runners unless you use a self-hosted runner inside an allowed range.",
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/cidr" }
+            }
           }
         },
         "kubernetes_version": {
