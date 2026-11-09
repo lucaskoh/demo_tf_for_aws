@@ -2,17 +2,10 @@ name: Terraform Plan
 
 on:
   pull_request:
+    # No paths filter on purpose: validate and plan are required checks of the main branch,
+    # and a required check that never runs (for example on a README-only change) would block
+    # the merge forever.
     branches: [main]
-    paths:
-      - "envs/**"
-      - "layers/**"
-      - "modules/**"
-      - "schemas/**"
-      - "scripts/**"
-      - "templates/**"
-      - "assets/**"
-      - ".github/workflows/terraform-*.yml"
-      - ".github/scripts/**"
 
 permissions:
   contents: read
