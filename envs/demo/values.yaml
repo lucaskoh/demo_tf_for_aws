@@ -6,8 +6,9 @@
 #   eks_admin_principal_arns, ci_plan_role_arn, ci_apply_role_arn,
 #   domain_name, record_name.
 #
-# backend.tf cannot read this file (backend blocks cannot use variables), so the
-# state bucket and region are also hard-coded there. Keep them in sync.
+# The layers use a partial S3 backend: scripts/tf.sh reads common.state_bucket and common.region
+# from this file and passes them to `terraform init`. Write both as "key: value" on one line
+# directly under `common:` (make validate-values checks that).
 
 common:
   # Short name prefix for resources (lowercase letters, digits, hyphens; max 20 characters)

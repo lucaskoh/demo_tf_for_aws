@@ -46,6 +46,11 @@ data "aws_availability_zones" "available" {
     }
 
     precondition {
+      condition     = local.workload_backend_count <= local.max_asg_target_groups
+      error_message = "${local.workload_backend_count} backends point to workloads, but an Auto Scaling group can be attached to ${local.max_asg_target_groups} target groups by default (two backends that point to the same workload count twice). Remove backends, or raise max_asg_target_groups in layers/network/backends.tf after you have raised the Service Quotas limit."
+    }
+
+    precondition {
       condition     = length(local.bad_templates) == 0
       error_message = "Every instance needs 'template: <name>' with a template from templates/ec2/templates.yaml (${join(", ", keys(local.ec2_templates))}). Check: ${join(", ", local.bad_templates)}."
     }

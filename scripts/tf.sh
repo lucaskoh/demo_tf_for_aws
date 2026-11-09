@@ -10,9 +10,9 @@
 #   passed to Terraform as TF_VAR_environment.
 # - Backend: layers use a partial S3 backend. On `init`, bucket, region and key
 #   are passed with -backend-config, taken from common.state_bucket and
-#   common.region of envs/<environment>/values.yaml. These two keys must stay
-#   flat (two-space indented, directly under `common:`), because they are read
-#   with awk and not with a YAML parser.
+#   common.region of envs/<environment>/values.yaml. They are read with awk (see
+#   scripts/common-value.sh), so they must be written as "key: value" on one line
+#   directly under `common:`; scripts/validate-values.py checks that in CI.
 # - The .terraform data directory is kept per environment and layer, so running
 #   another environment never reuses the backend of a previous init. Providers
 #   are shared through a plugin cache (TF_PLUGIN_CACHE_DIR).
@@ -47,13 +47,9 @@ if [ ! -d "$layer_dir" ]; then
   exit 2
 fi
 
-# Value of a flat key under "common:" (comments and quotes removed)
+# Value of a key under "common:" (see scripts/common-value.sh for what it can read)
 common_value() {
-  awk -v key="$1" '
-    /^common:/ { in_common = 1; next }
-    /^[^ #]/   { in_common = 0 }
-    in_common && $1 == key ":" { print $2; exit }
-  ' "$values" | sed -E 's/^["'\'']//; s/["'\'']$//'
+  "$root/scripts/common-value.sh" "$values" "$1"
 }
 
 export TF_VAR_environment="$env_name"

@@ -76,6 +76,12 @@ locals {
 
   # ---- checks (used by the preconditions in main.tf) ----------------------
 
+  # Every backend that points to a workload gets its own target group on the Auto Scaling group of
+  # the EKS node group, and an Auto Scaling group can be attached to 10 target groups by default
+  # (Service Quotas). Raise the number if you have raised the quota.
+  max_asg_target_groups  = 10
+  workload_backend_count = length([for b in values(local.backends) : b if b.workload != null])
+
   name_ok = {
     for k in concat(keys(local.workloads), keys(local.instances)) : k => can(regex("^[a-z0-9-]{1,40}$", k))
   }

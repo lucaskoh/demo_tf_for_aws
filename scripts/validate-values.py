@@ -18,6 +18,7 @@ import argparse
 import difflib
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -155,6 +156,29 @@ def validate_file(path: Path, kind: str):
 
     for error in Draft202012Validator(schema).iter_errors(data):
         errors.extend(explain(error, root))
+
+    # scripts/tf.sh reads these two values with awk (scripts/common-value.sh), not with a YAML
+    # parser. If the file is written in a way awk does not understand, the backend would get an
+    # empty or a wrong value, so compare both readers.
+    if kind == "values" and not errors and isinstance(data, dict) and isinstance(data.get("common"), dict):
+        for key in ("state_bucket", "region"):
+            expected = data["common"].get(key)
+            if not isinstance(expected, str):
+                continue
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "common-value.sh"), str(path), key],
+                capture_output=True,
+                text=True,
+            )
+            got = result.stdout.strip()
+            if got != expected:
+                errors.append((
+                    key_line(root, ["common"], key),
+                    f"common.{key}",
+                    f"scripts/tf.sh reads this value with awk and gets '{got}' instead of '{expected}'. "
+                    f"Write it as '{key}: <value>' on one line directly under 'common:', "
+                    "and do not repeat the key name in a nested map above it",
+                ))
 
     # Platform-side check for the template registry: the boot script must exist.
     if kind == "templates" and isinstance(data, dict):
