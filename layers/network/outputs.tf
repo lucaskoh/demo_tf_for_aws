@@ -1,6 +1,5 @@
-# This file is the interface of the network layer: the compute, workloads and
-# edge layers read these values through terraform_remote_state. Keep the names
-# stable, and do not add anything that consumers should not depend on.
+# The outputs of the network layer, for people (terraform output). The values that the other layers
+# read are published as SSM parameters: that list, which is the real interface, is in ssm.tf.
 
 output "vpc_a_id" {
   description = "ID of VPC-A (NLB, ALB, EKS)"

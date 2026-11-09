@@ -2,8 +2,8 @@ locals {
   tags = merge(local.common.tags, { Layer = "edge" })
 
   # Values published by the other layers
-  network = data.terraform_remote_state.network.outputs
-  compute = data.terraform_remote_state.compute.outputs
+  network = module.network_values.values
+  compute = module.compute_values.values
 
   # DNS is optional: without a domain the demo is reached through the NLB DNS name
   dns_enabled = var.domain_name != ""

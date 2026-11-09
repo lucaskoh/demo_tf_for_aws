@@ -2,7 +2,7 @@ locals {
   tags = merge(local.common.tags, { Layer = "compute" })
 
   # Values published by the network layer
-  network = data.terraform_remote_state.network.outputs
+  network = module.network_values.values
 
   # instances from values.yaml, resolved by the network layer
   instances = local.network.instances

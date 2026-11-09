@@ -10,22 +10,14 @@ data "aws_caller_identity" "current" {
       condition     = can(regex("^[a-z0-9-]{1,20}$", local.name))
       error_message = "common.name in values.yaml must be 1-20 characters: lowercase letters, digits and hyphens."
     }
-
-    precondition {
-      condition     = length(local.state_bucket) > 0
-      error_message = "common.state_bucket in values.yaml must not be empty."
-    }
   }
 }
 
-data "terraform_remote_state" "network" {
-  backend = "s3"
+# What the network layer published (see layers/network/ssm.tf)
+module "network_values" {
+  source = "../../modules/ssm-reader"
 
-  config = {
-    bucket = local.state_bucket
-    key    = "aws-multi-vpc/${var.environment}/network/terraform.tfstate"
-    region = local.region
-  }
+  path = "/tf-platform/${var.environment}/network"
 }
 
 module "s3_assets" {
