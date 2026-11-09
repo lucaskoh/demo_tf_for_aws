@@ -5,9 +5,8 @@ locals {
   common = local.values.common
   config = local.values.compute
 
-  name         = local.common.name
-  region       = local.common.region
-  state_bucket = local.common.state_bucket
+  name   = local.common.name
+  region = local.common.region
 
   http_port = local.common.http_port
 

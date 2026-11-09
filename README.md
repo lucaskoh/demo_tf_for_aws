@@ -157,7 +157,9 @@ demo_tf_for_aws/
 │   ├── k8s-app/
 │   ├── alb/
 │   ├── nlb/
-│   └── dns/
+│   ├── dns/
+│   ├── ssm-publisher/        # publishes values as SSM parameters (end of a layer)
+│   └── ssm-reader/           # reads what a layer before it published (start of a layer)
 ├── layers/                   # Terraform code of the four layers, shared by every environment
 │   ├── network/              # VPCs, peering, security groups
 │   ├── compute/              # S3 assets, EC2, EKS
@@ -213,7 +215,7 @@ cp layers/edge/terraform.tfvars.example layers/edge/terraform.tfvars         # o
 make apply-all   # network -> compute -> workloads -> edge (plans and applies each layer)
 ```
 
-The environment is split into four layers that are applied in this order; each layer reads what it needs from the layers before it (see [Remote State](#remote-state)). To work on one layer only, use `make plan LAYER=network`, `make apply LAYER=network`, and so on.
+The environment is split into four layers that are applied in this order; each layer reads what it needs from the layers before it (see [How layers share values](#how-layers-share-values)). To work on one layer only, use `make plan LAYER=network`, `make apply LAYER=network`, and so on.
 
 > **Immutable OIDC subject:** newer GitHub repositories send an OIDC subject that includes numeric IDs (`repo:<owner>@<owner-id>/<repo>@<repo-id>`), and then the CI roles reject the login with `Not authorized to perform sts:AssumeRoleWithWebIdentity`. Check with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` and, if it shows a `sub_claim_prefix`, pass it to bootstrap:
 > `terraform apply -var="github_repo=..." -var="github_oidc_subject_prefix=<sub_claim_prefix>"` (or `make bootstrap GITHUB_REPO=... OIDC_SUB_PREFIX=...`).
@@ -288,7 +290,7 @@ The layers use a partial S3 backend. `scripts/tf.sh` passes the bucket, region a
 |---|---|---|
 | `common.name` | `demo` | Name prefix for resources (1-20 chars: lowercase letters, digits, hyphens) |
 | `common.region` | `ap-northeast-1` | AWS region |
-| `common.state_bucket` | *(bucket name)* | State bucket, used to read the other layers' state |
+| `common.state_bucket` | *(bucket name)* | State bucket (the Terraform backend of every layer) |
 | `common.tags` | Project, Environment, ManagedBy | Default tags on every resource; each layer adds a `Layer` tag |
 | `network.vpc_a_cidr` | `10.0.0.0/16` | CIDR of VPC-A |
 | `network.vpc_b_cidr` | `10.1.0.0/16` | CIDR of VPC-B (must not overlap VPC-A) |
@@ -414,23 +416,32 @@ In CI, `terraform-plan.yml` plans every folder under `envs/`, and apply and dest
 
 ### State layout
 
-The environment is split into four states, one per layer. A layer reads the outputs of the layers before it with `terraform_remote_state`, so each `outputs.tf` is the interface of its layer.
+The environment is split into four states, one per layer. The key is `aws-multi-vpc/<environment>/<layer>/terraform.tfstate`; the table shows it for `demo`. A layer reads **only its own state**; what it needs from the other layers it reads from SSM parameters (see below).
 
-The key is `aws-multi-vpc/<environment>/<layer>/terraform.tfstate`; the table shows it for `demo`.
-
-| Layer | State key | Reads | Provides |
+| Layer | State key | Reads (SSM) | Publishes (SSM) |
 |---|---|---|---|
 | `network` | `aws-multi-vpc/demo/network/terraform.tfstate` | nothing | VPC and subnet IDs, security group IDs, the resolved `workloads`, `instances` and `backends` |
-| `compute` | `aws-multi-vpc/demo/compute/terraform.tfstate` | `network` | EC2 private IPs per instance, EKS cluster endpoint/CA/ASG name, S3 object URLs |
+| `compute` | `aws-multi-vpc/demo/compute/terraform.tfstate` | `network` | EC2 private IPs per instance, EKS cluster endpoint, CA, name and ASG name, S3 object URLs |
 | `workloads` | `aws-multi-vpc/demo/workloads/terraform.tfstate` | `network`, `compute` | nothing |
-| `edge` | `aws-multi-vpc/demo/edge/terraform.tfstate` | `network`, `compute` | URL of each backend, NLB/ALB DNS names |
+| `edge` | `aws-multi-vpc/demo/edge/terraform.tfstate` | `network`, `compute` | nothing (the URLs are outputs) |
 
 - **Apply order:** `network`, `compute`, then `workloads` and `edge` (independent of each other). **Destroy order:** the reverse. `workloads` must be destroyed before `compute`, because the Kubernetes provider needs the cluster.
-- A layer can only be planned after the layers it reads have been applied, because it reads their real, applied outputs. On a fresh account only `network` can be planned.
-- `workloads` is a separate layer so the Kubernetes provider is configured from the `compute` state instead of from a resource in the same state.
+- A layer can only be planned after the layers it reads have been applied, because it reads their real, applied values. On a fresh account only `network` can be planned.
+- `workloads` is a separate layer so the Kubernetes provider is configured from the parameters of the `compute` layer instead of from a resource in the same state.
 
 > State files can contain secrets in plain text and Git has no locking, so committing `terraform.tfstate` is unsafe.
 > The provided `.gitignore` should exclude `*.tfstate*`, `.terraform/`, and `terraform.tfvars`.
+
+### How layers share values
+
+A layer publishes the few values that other layers need as **SSM parameters**, and a layer reads the parameters of the layers before it. No layer reads another layer's Terraform state.
+
+- **Names:** `/tf-platform/<environment>/<layer>/<name>`, for example `/tf-platform/demo/network/vpc_a_id`. (SSM does not allow a name that starts with `aws` or `ssm`.)
+- **Format:** each value is stored as JSON, so lists and objects come back with the shape they were published with. The type is `String`: the values are not secrets (IDs, endpoints, a public certificate), and the CI plan role can read them without access to a KMS key.
+- **Publishing:** `layers/network/ssm.tf` and `layers/compute/ssm.tf` list exactly what is published (`modules/ssm-publisher`). When a layer needs another value from an earlier layer, add it there first. `outputs.tf` is only the list of outputs for people.
+- **Reading:** `modules/ssm-reader` reads everything under a path. If there is nothing, `plan` fails with "apply the layer that publishes them first", and the CI plan reports such a layer as *skipped*.
+- **Size and cost:** a standard parameter holds 4 KB. A value that is bigger is moved to the advanced tier automatically (8 KB, about US$0.05 per month for that parameter); above 8 KB the plan fails with a message. Everything else is free.
+- The parameters belong to the layer that publishes them: destroying the layer deletes them.
 
 ---
 
@@ -513,7 +524,7 @@ None of this is implemented here; it is the plan for turning the demo into somet
 
 ### Known caveats
 
-- **Plans of downstream layers:** a layer reads the *applied* state of the layers before it. On a fresh account only `network` can be planned, and a pull request that changes an upstream output and its consumer is planned against the old upstream values.
+- **Plans of downstream layers:** a layer reads the *applied* values (SSM parameters) of the layers before it. On a fresh account only `network` can be planned, and a pull request that changes an upstream output and its consumer is planned against the old upstream values.
 - **Reading Kubernetes resources in `plan`:** once the cluster exists, grant the plan role read access via an EKS access entry (`AmazonEKSViewPolicy`), otherwise `plan` fails on Kubernetes resources.
 - **Apply re-plans:** `apply` runs a fresh plan when you trigger it, so the result can differ from the PR comment if the infrastructure changed in between.
 - **Drift between `main` and AWS:** because apply is manual, merged changes are not deployed until you run the workflow.
@@ -583,7 +594,7 @@ The goal is a small internal platform: the platform team owns the Terraform code
 **Done**
 
 1. **Split state.** One state per layer (`network`, `compute`, `workloads`, `edge`), so a change in one area has a smaller blast radius and parts of the environment can be created or destroyed independently.
-2. **Group by nature.** Each layer is its own root module. Layers share values through `terraform_remote_state`.
+2. **Group by nature.** Each layer is its own root module. Layers share values through SSM parameters.
 3. **Drive configuration with `yamldecode`.** Each layer reads `envs/<environment>/values.yaml`; only values that come from GitHub variables and secrets remain Terraform variables.
 4. **Normalize the modules.** Modules do not know about this demo: one generic `security-group` module, and ports, paths, health checks, sizes and instance types are inputs with a `description`, a default and a `validation` where a wrong value would fail late.
 5. **Add a `values.yaml`.** The environment-specific values live in `envs/<environment>/values.yaml`.
@@ -591,12 +602,12 @@ The goal is a small internal platform: the platform team owns the Terraform code
 7. **Declare what runs and how it is routed.** `workloads`, `instances` and `backends` in `values.yaml`; the platform creates the rest and rejects mistakes in `plan` (see [Workloads, instances and backends](#workloads-instances-and-backends)).
 8. **EC2 image templates.** Instances must use a template provided by the platform team (see [EC2 image templates](#ec2-image-templates)).
 9. **Validate `values.yaml` against a schema.** JSON Schema checks in CI (with annotations on the pull request), locally and in the editor (see [Configuration](#configuration)).
+10. **SSM parameters instead of `terraform_remote_state`.** Each layer publishes the few values that others read, and no layer reads another layer's state (see [How layers share values](#how-layers-share-values)).
 
 **Planned**
 
 - **Separate who may change what.** `CODEOWNERS` for the platform code (`layers/`, `modules/`, `templates/`) and for each environment folder, versioned platform code, and an allowlist for container images.
 - **Optional components.** Switches such as `eks.enabled` or `dns.enabled`, with checks for combinations that make no sense.
-- **SSM Parameters instead of `terraform_remote_state`** to share values between layers.
 
 ---
 

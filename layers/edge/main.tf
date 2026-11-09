@@ -1,39 +1,14 @@
-data "terraform_remote_state" "network" {
-  backend = "s3"
+# What the network and compute layers published (see layers/network/ssm.tf and layers/compute/ssm.tf)
+module "network_values" {
+  source = "../../modules/ssm-reader"
 
-  # Checks for the values read from envs/<environment>/values.yaml (see values.tf)
-  lifecycle {
-    precondition {
-      condition     = length(local.region) > 0
-      error_message = "common.region in values.yaml must not be empty."
-    }
-
-    precondition {
-      condition     = can(regex("^[a-z0-9-]{1,20}$", local.name))
-      error_message = "common.name in values.yaml must be 1-20 characters: lowercase letters, digits and hyphens."
-    }
-
-    precondition {
-      condition     = length(local.state_bucket) > 0
-      error_message = "common.state_bucket in values.yaml must not be empty."
-    }
-  }
-
-  config = {
-    bucket = local.state_bucket
-    key    = "aws-multi-vpc/${var.environment}/network/terraform.tfstate"
-    region = local.region
-  }
+  path = "/tf-platform/${var.environment}/network"
 }
 
-data "terraform_remote_state" "compute" {
-  backend = "s3"
+module "compute_values" {
+  source = "../../modules/ssm-reader"
 
-  config = {
-    bucket = local.state_bucket
-    key    = "aws-multi-vpc/${var.environment}/compute/terraform.tfstate"
-    region = local.region
-  }
+  path = "/tf-platform/${var.environment}/compute"
 }
 
 # Route 53 -> NLB -> ALB -> backends

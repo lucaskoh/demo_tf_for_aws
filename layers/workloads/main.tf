@@ -1,45 +1,23 @@
-data "terraform_remote_state" "network" {
-  backend = "s3"
+# What the network and compute layers published (see layers/network/ssm.tf and layers/compute/ssm.tf)
+module "network_values" {
+  source = "../../modules/ssm-reader"
 
-  # Checks for the values read from envs/<environment>/values.yaml (see values.tf)
-  lifecycle {
-    precondition {
-      condition     = length(local.region) > 0
-      error_message = "common.region in values.yaml must not be empty."
-    }
-
-    precondition {
-      condition     = length(local.state_bucket) > 0
-      error_message = "common.state_bucket in values.yaml must not be empty."
-    }
-  }
-
-  config = {
-    bucket = local.state_bucket
-    key    = "aws-multi-vpc/${var.environment}/network/terraform.tfstate"
-    region = local.region
-  }
+  path = "/tf-platform/${var.environment}/network"
 }
 
-data "terraform_remote_state" "compute" {
-  backend = "s3"
+module "compute_values" {
+  source = "../../modules/ssm-reader"
 
-  config = {
-    bucket = local.state_bucket
-    key    = "aws-multi-vpc/${var.environment}/compute/terraform.tfstate"
-    region = local.region
-  }
+  path = "/tf-platform/${var.environment}/compute"
 }
 
 locals {
-  network = data.terraform_remote_state.network.outputs
-  compute = data.terraform_remote_state.compute.outputs
+  network = module.network_values.values
+  compute = module.compute_values.values
 
   workloads = local.network.workloads
 }
 
-# One Deployment + Service per entry under workloads: (the numbers come from the
-# network layer). A workload that no backend routes to gets a ClusterIP Service.
 module "app" {
   source   = "../../modules/k8s-app"
   for_each = local.workloads

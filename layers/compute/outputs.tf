@@ -1,5 +1,5 @@
-# This file is the interface of the compute layer: the workloads and edge
-# layers read these values through terraform_remote_state.
+# The outputs of the compute layer, for people (terraform output). The values that the other layers
+# read are published as SSM parameters: that list, which is the real interface, is in ssm.tf.
 
 output "ec2_private_ips" {
   description = "Private IP of each instance, keyed by instance name (ALB targets)"
