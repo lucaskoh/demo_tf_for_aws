@@ -14,6 +14,14 @@ LAYERS      := network compute workloads edge
 # Layer for the single-layer targets: make plan LAYER=network
 LAYER       ?=
 LAYER_DIR   := layers/$(LAYER)
+# The layers that read what a layer publishes, in apply order. `make apply` continues with them, because a
+# change has to reach them (an EC2 instance that is replaced gets a new address, and edge must follow).
+DOWNSTREAM_network   := compute workloads edge
+DOWNSTREAM_compute   := workloads edge
+DOWNSTREAM_workloads :=
+DOWNSTREAM_edge      :=
+# make apply LAYER=compute ONLY=1 applies just that layer
+ONLY        ?=
 BOOT_DIR    := bootstrap
 GITHUB_REPO ?=
 # Only for repos with immutable OIDC subject claims, e.g. repo:owner@123/name@456
@@ -62,14 +70,19 @@ lint: ## Run tflint on all modules
 plan: init ## Create an execution plan for one layer (saved as tfplan)
 	$(TFL) $(LAYER) plan -out=tfplan
 
-apply: plan ## Apply the saved plan of one layer
-	$(TFL) $(LAYER) apply tfplan
+apply: check-layer ## Apply a layer, then every layer after it (ONLY=1: just this layer)
+	@for l in $(LAYER) $(if $(ONLY),,$(DOWNSTREAM_$(LAYER))); do \
+		echo "==> apply $$l"; \
+		$(TFL) $$l init -input=false >/dev/null && \
+		$(TFL) $$l plan -out=tfplan && \
+		$(TFL) $$l apply tfplan || exit 1; \
+	done
 
 destroy: init ## Destroy one layer (asks for confirmation)
 	$(TFL) $(LAYER) destroy
 
 apply-all: ## Apply every layer in order (network first)
-	@for l in $(LAYERS); do $(MAKE) apply LAYER=$$l || exit 1; done
+	@$(MAKE) apply LAYER=network
 
 destroy-all: ## Destroy every layer in reverse order (edge first); asks per layer
 	@for l in $(shell echo $(LAYERS) | tr ' ' '\n' | tac | tr '\n' ' '); do $(MAKE) destroy LAYER=$$l || exit 1; done
