@@ -46,6 +46,7 @@ compute:
 # and security group rules; the others are reachable inside the cluster only.
 workloads:
   web:
+    replica: 3
     # Optional. Without "image" the built-in Nginx demo page is served at the routed path(s).
     #   image: nginx:1.27-alpine
     #   container_port: 80             # the demo page needs 80
