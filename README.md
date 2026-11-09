@@ -485,7 +485,7 @@ All layers run as steps of a single job, so one `production` approval covers the
 
 ### Security model
 
-- The **plan role** can only be assumed by `pull_request` jobs and has read-only access plus state access.
+- The **plan role** can only be assumed by `pull_request` jobs. It has read-only access to AWS (`ReadOnlyAccess`), can read the Terraform state, and can write **only the lock files** (`*.tflock`) of the state bucket, never the state itself. A pull request runs the workflow of its own branch, so anyone who can push a branch can run commands with this role; that is why it must not be able to change the state. What remains possible is creating a fake lock file, which blocks an apply until it is deleted (a problem of availability, not of integrity). The bucket is also versioned, and old versions are kept for 90 days.
 - The **apply role** can only be assumed by jobs running in the `production` environment.
 - The demo apply role uses `AdministratorAccess` for simplicity. See [From demo to production: the apply role](#from-demo-to-production-the-apply-role) for how to replace it.
 - Plan comments only work for pull requests from the same repository (forks do not receive OIDC tokens).
@@ -496,7 +496,7 @@ What protects the apply role today is **who can assume it**, not what it can do:
 
 - No long-lived AWS keys exist in GitHub. Jobs get short-lived credentials through OIDC.
 - The apply role trusts only OIDC tokens whose subject is the `production` environment of this repository. That environment is limited to `main` and needs an approval, so a pull request or another branch cannot obtain the role.
-- The plan role is read-only (`ReadOnlyAccess`) and is only assumed by `pull_request` jobs.
+- The plan role is read-only (`ReadOnlyAccess`, plus write access to the state lock files only) and is only assumed by `pull_request` jobs.
 
 What it can do once assumed is **everything** (`AdministratorAccess`). For real use, replace that policy. A reasonable way to do it:
 
