@@ -7,7 +7,9 @@ on:
       - "envs/**"
       - "layers/**"
       - "modules/**"
+      - "schemas/**"
       - "scripts/**"
+      - "templates/**"
       - "assets/**"
       - ".github/workflows/terraform-*.yml"
       - ".github/scripts/**"
@@ -44,11 +46,23 @@ jobs:
           terraform_version: "~> 1.10"
           terraform_wrapper: false
 
+      # Python for the values.yaml schema checks; a virtualenv because the system Python
+      # of the runner does not allow installing packages into it.
+      - name: install the schema validator
+        run: |
+          python3 -m venv /tmp/schema-venv
+          /tmp/schema-venv/bin/pip install --quiet -r scripts/requirements.txt
+
+      - name: schema tests
+        run: make test-schemas PYTHON=/tmp/schema-venv/bin/python
+
       - name: terraform fmt
         run: terraform fmt -check -recursive
 
-      - name: terraform validate (all layers, no backend)
-        run: make validate
+      # Checks values.yaml and the EC2 templates against their schema first (errors show as
+      # annotations on the pull request), then validates every layer without a backend
+      - name: values.yaml schema and terraform validate (all layers, no backend)
+        run: make validate PYTHON=/tmp/schema-venv/bin/python
 
       - uses: terraform-linters/setup-tflint@v4
 

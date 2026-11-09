@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schemas/values.schema.json
 # Environment values shared by all layers (network, compute, workloads, edge).
 # Each layer reads this file with yamldecode(file(...)), see values.tf in the layer.
 #

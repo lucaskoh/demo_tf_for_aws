@@ -1,0 +1,56 @@
+common:
+  name: demo
+  region: ap-northeast-1
+  state_bucket: example-tfstate-bucket
+  tags:
+    Project: demo
+    Environment: demo
+  http_port: 80
+network:
+  vpc_a_cidr: 10.0.0.0/16
+  vpc_b_cidr: 10.1.0.0/16
+compute:
+  ec2_instance_type: t3.micro
+  eks:
+    instance_types: [t3.small, t3a.small]
+    capacity_type: SPOT
+    desired_size: 1
+    min_size: 1
+    max_size: 2
+  kubernetes_version: null
+workloads:
+  web: # an empty entry is the built-in demo page
+  api:
+    image: hashicorp/http-echo:1.0
+    container_port: 5678
+    health_check_path: /api
+    replicas: 2
+    node_port: 32100
+  worker: # no backend routes to it
+    image: busybox:1.36
+instances:
+  legacy:
+    template: nginx-demo
+  reports:
+    template: nginx-demo
+    instance_type: t3.small
+    private_ip: 10.1.1.126
+    page_heading: Reports
+backends:
+  home:
+    path: home
+    workload: web
+  landing:
+    path: landing
+    workload: web
+  api:
+    path: api
+    workload: api
+    health_check_path: /api
+    priority: 100
+  legacy:
+    path: legacy
+    instance: legacy
+  reports:
+    path: reports
+    instance: reports

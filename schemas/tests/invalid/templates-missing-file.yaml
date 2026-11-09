@@ -1,0 +1,4 @@
+# expect: does not exist
+nginx-demo:
+  ami_name_pattern: al2023-ami-2023.*-x86_64
+  user_data_file: nowhere.sh.tftpl

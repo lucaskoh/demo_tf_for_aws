@@ -166,8 +166,15 @@ demo_tf_for_aws/
 ├── templates/
 │   ├── demo-page.html.tftpl  # the demo page (EKS and EC2)
 │   └── ec2/                  # EC2 image templates: templates.yaml + one user data file each
+├── schemas/
+│   ├── values.schema.json    # JSON Schema of envs/<environment>/values.yaml
+│   ├── ec2-templates.schema.json
+│   └── tests/                # valid and invalid examples of the schemas
 ├── scripts/
-│   └── tf.sh                 # runs terraform for one environment and layer (backend + environment)
+│   ├── tf.sh                 # runs terraform for one environment and layer (backend + environment)
+│   ├── validate-values.py    # checks values.yaml and the EC2 templates against the schemas
+│   ├── test-schemas.sh       # runs the schema fixtures
+│   └── requirements.txt      # Python packages of the two scripts above
 └── envs/
     └── demo/                 # an environment is a folder with a values.yaml, no Terraform code
         └── values.yaml
@@ -223,7 +230,9 @@ The Makefile wraps the common commands. Run `make help` to list them. The enviro
 |---|---|
 | `make bootstrap GITHUB_REPO=owner/repo` | One time: create the state bucket and CI roles |
 | `make fmt` / `make fmt-check` | Format Terraform files / check formatting (same as CI) |
-| `make validate` | `init -backend=false` and `validate` for every layer; no AWS credentials needed |
+| `make validate-values` | Check every `envs/*/values.yaml` and the EC2 templates against their JSON Schema |
+| `make test-schemas` | Run the schema fixtures in `schemas/tests` |
+| `make validate` | `validate-values`, then `init -backend=false` and `validate` for every layer; no AWS credentials needed |
 | `make lint` | Run `tflint` on all modules |
 | `make init LAYER=...` | Initialize one layer with the S3 backend |
 | `make plan LAYER=...` | Create an execution plan for one layer, saved as `tfplan` |
@@ -262,6 +271,14 @@ Configuration comes from two places:
 
 1. **`envs/demo/values.yaml`** holds the environment values and is shared by all layers. Each layer reads it with `yamldecode(file(...))` in its `values.tf`, and checks it with preconditions (for example the name format, valid and non-overlapping CIDRs, and the workloads, instances and backends: targets, paths, ports and IPs). A new environment is a new values file.
 2. **Variables** hold the values that come from outside the repository: set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables and secrets.
+
+**`values.yaml` is checked against a schema** (`schemas/values.schema.json`) before anything is planned: unknown or misspelled keys (for example `replica` instead of `replicas`), wrong types, values out of range, missing required fields, and a backend without exactly one target are reported with the file and line, for example `envs/demo/values.yaml:24: workloads.web: unknown key 'replica' - did you mean 'replicas'?`. This runs
+
+- locally: `make validate-values` (needs `python3 -m pip install -r scripts/requirements.txt`),
+- in CI, where each error shows up as an annotation on the pull request, and
+- in the editor: both YAML files start with a `# yaml-language-server: $schema=...` line, so the [YAML extension for VS Code](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) offers completion, shows the description of each field and underlines mistakes while you type. Keep that line when you copy an environment.
+
+The schema only checks the shape. What needs other data (a backend points to an existing workload or instance, paths, NodePorts, IPs and priorities are unique, the EC2 template exists) is checked by Terraform when the network layer is planned. When a field is added to the platform, the schema changes in the same pull request.
 
 The layers use a partial S3 backend. `scripts/tf.sh` passes the bucket, region and state key to `terraform init` with `-backend-config`, taking the bucket and region from `common.state_bucket` and `common.region`, so `values.yaml` is the only place that has them. These two keys must stay flat under `common:` because the script reads them with `awk`, not with a YAML parser.
 
@@ -567,10 +584,10 @@ The goal is a small internal platform: the platform team owns the Terraform code
 6. **Environments are values-only.** The layer code is shared; a new environment is a new folder under `envs/` (see [Environments](#environments)).
 7. **Declare what runs and how it is routed.** `workloads`, `instances` and `backends` in `values.yaml`; the platform creates the rest and rejects mistakes in `plan` (see [Workloads, instances and backends](#workloads-instances-and-backends)).
 8. **EC2 image templates.** Instances must use a template provided by the platform team (see [EC2 image templates](#ec2-image-templates)).
+9. **Validate `values.yaml` against a schema.** JSON Schema checks in CI (with annotations on the pull request), locally and in the editor (see [Configuration](#configuration)).
 
 **Planned**
 
-- **Validate `values.yaml` in CI** against a schema, so a wrong field is caught in the pull request with a clear message.
 - **Separate who may change what.** `CODEOWNERS` for the platform code (`layers/`, `modules/`, `templates/`) and for each environment folder, versioned platform code, and an allowlist for container images.
 - **Optional components.** Switches such as `eks.enabled` or `dns.enabled`, with checks for combinations that make no sense.
 - **SSM Parameters instead of `terraform_remote_state`** to share values between layers.
