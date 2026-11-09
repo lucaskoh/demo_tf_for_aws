@@ -1,0 +1,5 @@
+# expect: is not one of
+nginx-demo:
+  ami_name_pattern: al2023-ami-2023.*-x86_64
+  user_data_file: nginx-demo.sh.tftpl
+  root_volume_type: fast

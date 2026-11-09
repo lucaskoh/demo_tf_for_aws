@@ -1,0 +1,3 @@
+# Dependencies of scripts/validate-values.py (pinned)
+jsonschema==4.19.2
+PyYAML==6.0.3

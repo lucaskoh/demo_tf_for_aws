@@ -7,6 +7,8 @@ ENV         ?= demo
 # Every Terraform call for a layer goes through scripts/tf.sh (backend + environment)
 TF          ?= terraform
 TFL         := scripts/tf.sh $(ENV)
+# Python for the values.yaml checks (needs scripts/requirements.txt)
+PYTHON      ?= python3
 # Layers in apply order (destroy runs in reverse). Each is its own root module and state.
 LAYERS      := network compute workloads edge
 # Layer for the single-layer targets: make plan LAYER=network
@@ -17,7 +19,7 @@ GITHUB_REPO ?=
 # Only for repos with immutable OIDC subject claims, e.g. repo:owner@123/name@456
 OIDC_SUB_PREFIX ?=
 
-.PHONY: help bootstrap fmt fmt-check init validate lint plan apply destroy apply-all destroy-all output clean check-layer
+.PHONY: help bootstrap fmt fmt-check init validate-values test-schemas validate lint plan apply destroy apply-all destroy-all output clean check-layer
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -40,7 +42,13 @@ check-layer:
 init: check-layer ## Initialize one layer (LAYER=network)
 	$(TFL) $(LAYER) init
 
-validate: ## Validate every layer without touching the backend
+validate-values: ## Check every envs/*/values.yaml and the EC2 templates against their JSON Schema
+	$(PYTHON) scripts/validate-values.py
+
+test-schemas: ## Run the schema fixtures in schemas/tests
+	PYTHON=$(PYTHON) bash scripts/test-schemas.sh
+
+validate: validate-values ## Check values.yaml against the schema, then validate every layer (no backend)
 	@for l in $(LAYERS); do \
 		echo "==> $$l"; \
 		$(TFL) $$l init -backend=false -input=false >/dev/null && \

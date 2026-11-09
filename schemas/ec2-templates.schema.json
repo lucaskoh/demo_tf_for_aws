@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EC2 image templates (templates/ec2/templates.yaml)",
+  "description": "The EC2 image templates that the platform team provides. An instance in values.yaml must name one of them.",
+  "type": "object",
+  "propertyNames": {
+    "pattern": "^[a-z0-9-]+$",
+    "x-error-message": "template names must be lowercase letters, digits and hyphens"
+  },
+  "additionalProperties": {
+    "type": "object",
+    "required": ["ami_name_pattern", "user_data_file"],
+    "additionalProperties": false,
+    "properties": {
+      "description": { "description": "What the template is for.", "type": "string" },
+      "ami_name_pattern": {
+        "description": "Name pattern of the AMI. The most recent match is used.",
+        "type": "string",
+        "minLength": 1
+      },
+      "ami_owners": {
+        "description": "Owners of the AMI. Default [amazon].",
+        "type": "array",
+        "minItems": 1,
+        "items": { "type": "string", "minLength": 1 }
+      },
+      "user_data_file": {
+        "description": "User data file next to templates.yaml (templatefile syntax). Receives http_port, paths and page_html.",
+        "type": "string",
+        "pattern": "^[A-Za-z0-9._-]+$",
+        "x-error-message": "must be a file name next to templates.yaml, without a directory"
+      },
+      "root_volume_size": { "description": "Root volume size in GiB. Default 8.", "type": "integer", "minimum": 1 },
+      "root_volume_type": { "description": "Root volume type. Default gp3.", "enum": ["gp2", "gp3", "io1", "io2", "standard"] }
+    }
+  }
+}
