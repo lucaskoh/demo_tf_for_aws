@@ -396,6 +396,7 @@ Terraform state is stored in an **S3 bucket** (created by `bootstrap/`), never i
 | Encryption | SSE-S3 (AES256) |
 | Public access | Fully blocked; plain HTTP requests denied |
 | Locking | S3 native locking (`use_lockfile = true`, Terraform >= 1.10), no DynamoDB needed |
+| Access logs | S3 server access logs (who read or wrote what, and when) go to a second bucket, `<state bucket>-logs`, and are kept for 90 days. The log bucket is private, encrypted, versioned and TLS-only |
 
 ### Environments
 
@@ -485,7 +486,7 @@ All layers run as steps of a single job, so one `production` approval covers the
 
 ### Security model
 
-- The **plan role** can only be assumed by `pull_request` jobs. It has read-only access to AWS (`ReadOnlyAccess`), can read the Terraform state, and can write **only the lock files** (`*.tflock`) of the state bucket, never the state itself. A pull request runs the workflow of its own branch, so anyone who can push a branch can run commands with this role; that is why it must not be able to change the state. What remains possible is creating a fake lock file, which blocks an apply until it is deleted (a problem of availability, not of integrity). The bucket is also versioned, and old versions are kept for 90 days.
+- The **plan role** can only be assumed by `pull_request` jobs. It has read-only access to AWS (`ReadOnlyAccess`), can read the Terraform state (only the keys under `aws-multi-vpc/`), and can write **only the lock files** (`*.tflock`) of the state bucket, never the state itself. A pull request runs the workflow of its own branch, so anyone who can push a branch can run commands with this role; that is why it must not be able to change the state. What remains possible is creating a fake lock file, which blocks an apply until it is deleted (a problem of availability, not of integrity). The bucket is also versioned, and old versions are kept for 90 days.
 - The **apply role** can only be assumed by jobs running in the `production` environment.
 - The demo apply role uses `AdministratorAccess` for simplicity. See [From demo to production: the apply role](#from-demo-to-production-the-apply-role) for how to replace it.
 - Plan comments only work for pull requests from the same repository (forks do not receive OIDC tokens).
@@ -506,6 +507,7 @@ What it can do once assumed is **everything** (`AdministratorAccess`). For real 
 4. **Prevent privilege escalation:** allow `iam:PassRole` only for the EKS roles and only `iam:PassedToService` EKS/EC2, and require a permissions boundary (`iam:PermissionsBoundary`) on every role that Terraform creates.
 5. **One role per layer:** `network`, `compute`, `workloads` and `edge` need very different permissions (only `compute` needs IAM, only `edge` needs Route 53), and each can be limited to its own state key.
 6. **Keep the trust policy** as it is, and keep a separate approval for `destroy`.
+7. **Encrypt the state bucket with a customer managed KMS key** instead of SSE-S3. It gives you a key policy and an audit trail of every use of the key. It costs about US$1 per month, and every role that reads or writes the state (the plan role, the apply role, people) then also needs access to the key. The security scanner (tfsec) warns about this; the warning is ignored on purpose in `bootstrap/main.tf` and this is the reason.
 
 None of this is implemented here; it is the plan for turning the demo into something you would run for real.
 

@@ -21,6 +21,10 @@ locals {
   # Subject prefix of the GitHub OIDC token. Repos with immutable subject claims need the ID form.
   github_sub_prefix = coalesce(var.github_oidc_subject_prefix, "repo:${var.github_repo}")
   oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
+
+  # Every state key starts with this prefix: <prefix>/<environment>/<layer>/terraform.tfstate.
+  # Keep it the same as in scripts/tf.sh.
+  state_key_prefix = "aws-multi-vpc"
 }
 
 # ---------------------------------------------------------------------------
@@ -38,6 +42,10 @@ resource "aws_s3_bucket_versioning" "state" {
   }
 }
 
+# The bucket is encrypted with SSE-S3 (AES256). A customer managed KMS key adds a key policy and an audit
+# trail, but costs about US$1 per month and every role that reads or writes the state would also need access
+# to the key. That is a choice for a real environment, see the README.
+# tfsec:ignore:aws-s3-encryption-customer-key
 resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
   bucket = aws_s3_bucket.state.id
 
@@ -54,6 +62,16 @@ resource "aws_s3_bucket_public_access_block" "state" {
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
+}
+
+# Server access logs: who read or wrote the state bucket, and when. Delivered to the log bucket below.
+resource "aws_s3_bucket_logging" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  target_bucket = aws_s3_bucket.state_logs.id
+  target_prefix = "${local.state_log_prefix}/"
+
+  depends_on = [aws_s3_bucket_policy.state_logs]
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "state" {
@@ -98,6 +116,128 @@ data "aws_iam_policy_document" "state_bucket" {
 resource "aws_s3_bucket_policy" "state" {
   bucket = aws_s3_bucket.state.id
   policy = data.aws_iam_policy_document.state_bucket.json
+}
+
+# ---------------------------------------------------------------------------
+# Access logs of the state bucket
+# ---------------------------------------------------------------------------
+locals {
+  state_log_prefix = "state-bucket"
+}
+
+# This bucket receives the access logs, so logging it too would write logs about the logs, forever. It is
+# encrypted with SSE-S3, for the same reason as the state bucket (see above).
+# tfsec:ignore:aws-s3-enable-bucket-logging
+# tfsec:ignore:aws-s3-encryption-customer-key
+resource "aws_s3_bucket" "state_logs" {
+  bucket = "${local.state_bucket_name}-logs"
+}
+
+resource "aws_s3_bucket_public_access_block" "state_logs" {
+  bucket                  = aws_s3_bucket.state_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "state_logs" {
+  bucket = aws_s3_bucket.state_logs.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_versioning" "state_logs" {
+  bucket = aws_s3_bucket.state_logs.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# Logs are only useful for a while, and a few pennies per month is the point
+resource "aws_s3_bucket_lifecycle_configuration" "state_logs" {
+  bucket = aws_s3_bucket.state_logs.id
+
+  rule {
+    id     = "expire-logs"
+    status = "Enabled"
+
+    filter {}
+
+    expiration {
+      days = 90
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 7
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+data "aws_iam_policy_document" "state_logs" {
+  statement {
+    sid     = "DenyInsecureTransport"
+    effect  = "Deny"
+    actions = ["s3:*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    resources = [
+      aws_s3_bucket.state_logs.arn,
+      "${aws_s3_bucket.state_logs.arn}/*",
+    ]
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+
+  # The S3 logging service may deliver the logs of the state bucket, and only those
+  statement {
+    sid     = "AllowAccessLogDelivery"
+    effect  = "Allow"
+    actions = ["s3:PutObject"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["logging.s3.amazonaws.com"]
+    }
+
+    resources = ["${aws_s3_bucket.state_logs.arn}/${local.state_log_prefix}/*"]
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = [aws_s3_bucket.state.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "state_logs" {
+  bucket = aws_s3_bucket.state_logs.id
+  policy = data.aws_iam_policy_document.state_logs.json
+
+  depends_on = [aws_s3_bucket_public_access_block.state_logs]
 }
 
 # ---------------------------------------------------------------------------
@@ -158,17 +298,20 @@ data "aws_iam_policy_document" "state_access" {
   }
 
   statement {
-    # read the state of the other layers (terraform_remote_state) and the lock files
-    actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.state.arn}/*"]
+    # Read the state and the lock files of every environment and layer. The environment names are not
+    # known here, so the resource has a wildcard, limited to the key prefix of the state.
+    actions = ["s3:GetObject"]
+    # tfsec:ignore:aws-iam-no-policy-wildcards
+    resources = ["${aws_s3_bucket.state.arn}/${local.state_key_prefix}/*"]
   }
 
   statement {
     # plan acquires and releases the state lock, so it may write the lock files
     # (<state key>.tflock), but never the state itself: a pull request runs the workflow
     # of its own branch, and this role can be assumed by every pull request job
-    actions   = ["s3:PutObject", "s3:DeleteObject"]
-    resources = ["${aws_s3_bucket.state.arn}/*.tflock"]
+    actions = ["s3:PutObject", "s3:DeleteObject"]
+    # tfsec:ignore:aws-iam-no-policy-wildcards
+    resources = ["${aws_s3_bucket.state.arn}/${local.state_key_prefix}/*.tflock"]
   }
 }
 
