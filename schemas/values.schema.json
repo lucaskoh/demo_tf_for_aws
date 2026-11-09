@@ -188,7 +188,7 @@
           "x-error-message": "must be an instance type such as t3.micro"
         },
         "private_ip": {
-          "description": "Fixed private IP inside the VPC-B subnet. Derived from the name when not set.",
+          "description": "Fixed private IP inside the VPC-B subnet. Optional: by default AWS picks a free address of the subnet, so nothing can collide. An address chosen by AWS changes when the instance is replaced; the edge layer then has to be applied again to follow it.",
           "type": ["string", "null"],
           "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}$",
           "x-error-message": "must be an IPv4 address such as 10.1.1.100"

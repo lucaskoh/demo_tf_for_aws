@@ -72,12 +72,12 @@ data "aws_availability_zones" "available" {
 
     precondition {
       condition     = length(local.bad_prios) == 0 && length(local.dup_prios) == 0
-      error_message = "ALB rule priorities must be between 1 and 50000 and unique. Set 'priority' on one of these backends: ${join(", ", concat(local.bad_prios, [for k, b in local.backends : k if contains(local.dup_prios, b.priority)]))}."
+      error_message = "ALB rule priorities must be between 1 and 50000 and unique. ${length(local.dup_prios) > 0 ? "Two backends got the same priority, which can happen by chance. Set one of these (a free value is suggested): ${join("; ", local.priority_fixes)}. " : ""}${length(local.bad_prios) > 0 ? "Out of range: ${join(", ", local.bad_prios)}." : ""}"
     }
 
     precondition {
       condition     = length(local.bad_ports) == 0 && length(local.dup_ports) == 0
-      error_message = "A routed workload needs a unique node_port between 30000 and 32767, and container_port must be between 1 and 65535. Set 'node_port' on one of these workloads: ${join(", ", concat(local.bad_ports, [for k, w in local.exposed_workloads : k if contains(local.dup_ports, w.node_port)]))}."
+      error_message = "A routed workload needs a unique node_port between 30000 and 32767, and container_port must be between 1 and 65535. ${length(local.dup_ports) > 0 ? "Two workloads got the same NodePort, which can happen by chance. Set one of these (a free value is suggested): ${join("; ", local.node_port_fixes)}. " : ""}${length(local.bad_ports) > 0 ? "Check: ${join(", ", local.bad_ports)}." : ""}"
     }
 
     precondition {
@@ -87,7 +87,7 @@ data "aws_availability_zones" "available" {
 
     precondition {
       condition     = length(local.malformed_ips) == 0 && length(local.outside_ips) == 0 && length(local.dup_ips) == 0
-      error_message = "An instance needs a unique private_ip inside the VPC-B subnet ${local.vpc_b_subnet_cidr}. Set 'private_ip' on one of these instances: ${join(", ", concat(local.malformed_ips, local.outside_ips, [for k, i in local.instances : k if contains(local.dup_ips, i.private_ip)]))}."
+      error_message = "A private_ip that is set on an instance must be unique and inside the VPC-B subnet ${local.vpc_b_subnet_cidr}. Leave private_ip out to let AWS choose a free address. Check: ${join(", ", concat(local.malformed_ips, local.outside_ips, [for k, i in local.fixed_ip_instances : k if contains(local.dup_ips, i.private_ip)]))}."
     }
 
     precondition {
