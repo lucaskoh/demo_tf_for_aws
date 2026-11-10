@@ -79,7 +79,7 @@ locals {
   ])
   bad_ports = [
     for k, w in local.workloads : k
-    if w.container_port < 1 || w.container_port > 65535 || (w.exposed && (w.node_port < 30000 || w.node_port > 32767))
+    if w.container_port < 1 || w.container_port > 65535 || (w.exposed ? (w.node_port < 30000 || w.node_port > 32767) : false)
   ]
   # Without an image the built-in Nginx demo page is used, and Nginx listens on 80
   bad_demo_ports = [for k, w in local.workloads : k if w.image == null && w.container_port != 80]
@@ -103,12 +103,14 @@ locals {
   malformed_ips      = [for k, i in local.fixed_ip_instances : k if !can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}$", i.private_ip))]
   subnet_b_first     = sum([for i, o in split(".", cidrhost(var.vpc_b_subnet_cidr, 0)) : tonumber(o) * pow(256, 3 - i)])
   subnet_b_size      = pow(2, 32 - tonumber(split("/", var.vpc_b_subnet_cidr)[1]))
+  # (only well formed addresses are converted to numbers, the conversion fails for the others)
+  ip_numbers = {
+    for k, i in local.fixed_ip_instances : k => sum([for n, o in split(".", i.private_ip) : tonumber(o) * pow(256, 3 - n)])
+    if !contains(local.malformed_ips, k)
+  }
   outside_ips = [
-    for k, i in local.fixed_ip_instances : k
-    if !contains(local.malformed_ips, k) && (
-      sum([for n, o in split(".", i.private_ip) : tonumber(o) * pow(256, 3 - n)]) < local.subnet_b_first ||
-      sum([for n, o in split(".", i.private_ip) : tonumber(o) * pow(256, 3 - n)]) >= local.subnet_b_first + local.subnet_b_size
-    )
+    for k, n in local.ip_numbers : k
+    if n < local.subnet_b_first || n >= local.subnet_b_first + local.subnet_b_size
   ]
 
   # ---- the rules ------------------------------------------------------------------
