@@ -1,0 +1,10 @@
+# A workload and a backend that routes to an instance of another file
+workloads:
+  web: {}
+backends:
+  front:
+    path: front
+    workload: web
+  legacy-page:
+    path: legacy
+    instance: legacy

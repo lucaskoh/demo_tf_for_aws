@@ -15,6 +15,7 @@ The goal is a small internal platform: the platform team owns the Terraform code
 9. **Validate `values.yaml` against a schema.** JSON Schema checks in CI (with annotations on the pull request), locally and in the editor (see [Configuration](configuration.md#configuration)).
 10. **SSM parameters instead of `terraform_remote_state`.** Each layer publishes the few values that others read, and no layer reads another layer's state (see [How layers share values](layers-and-state.md#how-layers-share-values)).
 11. **Split `values.yaml` by owner.** The platform file `envs/<environment>/values.yaml` (`common`, `network`, `compute`) and any number of app files under `envs/<environment>/apps/` (`workloads`, `instances`, `backends`). The files are merged as a union, a name that is defined twice is an error that names both files, and a backend may point to a workload of another file (see [App files](configuration.md#app-files)).
+12. **Resolver as a tested module.** The code that merges the app files, derives the numbers and checks the rules is `modules/env-resolver`, covered by `terraform test` (see [Where the rules live](configuration.md#workloads-instances-and-backends)).
 
 **Planned, in this order**
 

@@ -36,83 +36,8 @@ data "aws_availability_zones" "available" {
     # ---- workloads, instances and backends (see backends.tf) ----
 
     precondition {
-      condition     = length(local.sections_in_values) == 0
-      error_message = "values.yaml is the platform file and does not declare ${join(", ", local.sections_in_values)} any more. Move them to a file in envs/<environment>/apps/."
-    }
-
-    precondition {
-      condition     = length(local.ignored_app_files) == 0
-      error_message = "Only files that end in .yaml are read from envs/<environment>/apps/. These are ignored: ${join(", ", local.ignored_app_files)}. Rename them."
-    }
-
-    precondition {
-      condition     = length(local.duplicate_names) == 0
-      error_message = "A name may be defined once in the whole environment, but ${join("; ", local.duplicate_messages)}."
-    }
-
-    precondition {
-      condition     = length(local.backends) > 0
-      error_message = "The files in envs/<environment>/apps/ must declare at least one backend under backends:."
-    }
-
-    precondition {
-      condition     = length(local.bad_names) == 0 && length(local.bad_backend_keys) == 0
-      error_message = "Names under workloads:, instances: and backends: must be lowercase letters, digits and hyphens (workloads and instances up to 40 characters), and '${local.name}-<backend>-tg' must be at most 32 characters (target group name limit). Rename: ${join(", ", concat(local.bad_names, local.bad_backend_keys))}."
-    }
-
-    precondition {
-      condition     = local.workload_backend_count <= local.max_asg_target_groups
-      error_message = "${local.workload_backend_count} backends point to workloads, but an Auto Scaling group can be attached to ${local.max_asg_target_groups} target groups by default (two backends that point to the same workload count twice). Remove backends, or raise max_asg_target_groups in layers/network/backends.tf after you have raised the Service Quotas limit."
-    }
-
-    precondition {
-      condition     = length(local.bad_templates) == 0
-      error_message = "Every instance needs 'template: <name>' with a template from templates/ec2/templates.yaml (${join(", ", keys(local.ec2_templates))}). Check: ${join(", ", local.bad_templates)}."
-    }
-
-    precondition {
-      condition     = length(local.bad_targets) == 0
-      error_message = "Each backend needs a path and exactly one target, either 'workload: <name>' or 'instance: <name>', that is declared under workloads: or instances:. Check: ${join(", ", local.bad_targets)}."
-    }
-
-    precondition {
-      condition     = length(local.bad_paths) == 0
-      error_message = "path of a backend may contain only letters, digits, dots, underscores and hyphens (one URL segment, no slashes). Check: ${join(", ", local.bad_paths)}."
-    }
-
-    precondition {
-      condition     = length(local.dup_paths) == 0
-      error_message = "Backends must use different paths. Used more than once: ${join(", ", local.dup_paths)}."
-    }
-
-    precondition {
-      condition     = length(local.bad_prios) == 0 && length(local.dup_prios) == 0
-      error_message = "ALB rule priorities must be between 1 and 50000 and unique. ${length(local.dup_prios) > 0 ? "Two backends got the same priority, which can happen by chance. Set one of these (a free value is suggested): ${join("; ", local.priority_fixes)}. " : ""}${length(local.bad_prios) > 0 ? "Out of range: ${join(", ", local.bad_prios)}." : ""}"
-    }
-
-    precondition {
-      condition     = length(local.bad_ports) == 0 && length(local.dup_ports) == 0
-      error_message = "A routed workload needs a unique node_port between 30000 and 32767, and container_port must be between 1 and 65535. ${length(local.dup_ports) > 0 ? "Two workloads got the same NodePort, which can happen by chance. Set one of these (a free value is suggested): ${join("; ", local.node_port_fixes)}. " : ""}${length(local.bad_ports) > 0 ? "Check: ${join(", ", local.bad_ports)}." : ""}"
-    }
-
-    precondition {
-      condition     = length(local.bad_demo_ports) == 0
-      error_message = "A workload without 'image' serves the built-in Nginx demo page, which listens on port 80. Remove container_port or set an image: ${join(", ", local.bad_demo_ports)}."
-    }
-
-    precondition {
-      condition     = length(local.malformed_ips) == 0 && length(local.outside_ips) == 0 && length(local.dup_ips) == 0
-      error_message = "A private_ip that is set on an instance must be unique and inside the VPC-B subnet ${local.vpc_b_subnet_cidr}. Leave private_ip out to let AWS choose a free address. Check: ${join(", ", concat(local.malformed_ips, local.outside_ips, [for k, i in local.fixed_ip_instances : k if contains(local.dup_ips, i.private_ip)]))}."
-    }
-
-    precondition {
-      condition     = length(local.bad_texts) == 0
-      error_message = "page_title and page_heading must not contain <, > or \" characters or line breaks. Check: ${join(", ", local.bad_texts)}."
-    }
-
-    precondition {
-      condition     = length(local.bad_images) == 0 && length(local.bad_health) == 0
-      error_message = "image must look like an image reference (for example nginx:1.27-alpine) and health_check_path must start with '/'. Check: ${join(", ", concat(local.bad_images, local.bad_health))}."
+      condition     = length(module.environment.problems) == 0
+      error_message = "The environment has problems (envs/${var.environment}/apps/):\n- ${join("\n- ", module.environment.problems)}"
     }
   }
 }

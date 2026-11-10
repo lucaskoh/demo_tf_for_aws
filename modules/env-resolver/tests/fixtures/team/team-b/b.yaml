@@ -1,0 +1,4 @@
+# One folder per team: the instance that a backend of a.yaml points to
+instances:
+  legacy:
+    template: nginx-demo
