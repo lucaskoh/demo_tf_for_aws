@@ -1,0 +1,26 @@
+# Who is asked to review a change. The last matching pattern wins.
+#
+# Today there is one maintainer, so everything is owned by the platform owner and the file only
+# requests reviews automatically. "Require review from Code Owners" (branch protection) stays off
+# on purpose: nobody can approve their own pull request, so with a single owner it would block
+# every merge. Turn it on when a second account or a team exists (see docs/roadmap.md).
+
+# Everything that is not listed below
+*                       @lucaskoh
+
+# Platform: code, guardrails, pipelines and the platform file of each environment
+/layers/                @lucaskoh
+/modules/               @lucaskoh
+/templates/             @lucaskoh
+/schemas/               @lucaskoh
+/scripts/               @lucaskoh
+/bootstrap/             @lucaskoh
+/.github/               @lucaskoh
+/envs/*/values.yaml     @lucaskoh
+
+# Teams: the app files of an environment (workloads, instances, backends). Give each team its own
+# file or folder and list it after the platform lines, for example:
+#   /envs/*/apps/team-a/   @your-org/team-a
+#   /envs/*/apps/shop.yaml @your-org/shop
+# Until then the platform owner reviews them too.
+/envs/*/apps/           @lucaskoh
