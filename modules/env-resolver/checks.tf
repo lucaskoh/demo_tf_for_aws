@@ -39,7 +39,7 @@ locals {
   ]
 
   # Every instance must name an image template that the platform provides
-  bad_templates = [for k, i in local.instances : k if i.template == null || !contains(var.ec2_template_names, coalesce(i.template, ""))]
+  bad_templates = [for k, i in local.instances : k if i.template == null ? true : !contains(var.ec2_template_names, i.template)]
 
   # A backend needs a path and exactly one existing target
   bad_targets = [
