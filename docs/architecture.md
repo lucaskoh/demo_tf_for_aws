@@ -57,5 +57,5 @@ This project is a **learning / demo environment**, not a production blueprint.
 - **Spot nodes** can be reclaimed at any time.
 - **EC2 instances live in one subnet, so in one AZ.** No high availability for the instances.
 - **Only Deployments.** There is no StatefulSet, because the cluster has no EBS CSI driver (no persistent volumes).
-- **No allowlist for container images yet.** A workload can use any public image; restricting that is part of the planned guardrails.
+- **Images are unrestricted by default.** A workload can use any public image until the platform owner sets `common.allowed_images` (and, optionally, `common.image_proxies` to pull through your own registry). See [Allowed images](configuration.md#allowed-images). The allowlist limits where an image comes from, not what is in it: image scanning and digest pinning are not part of this repository.
 - **Broad CI permissions.** The apply role uses `AdministratorAccess` for simplicity (only jobs approved in the `production` environment can assume it). See [From demo to production: the apply role](ci-cd.md#from-demo-to-production-the-apply-role).

@@ -1,5 +1,7 @@
 # Configuration
 
+This page is the reference. If you are new, start with the [team guide](team-guide.md), which walks through one change from start to finish.
+
 Configuration comes from three places:
 
 1. **`envs/<environment>/values.yaml`** is the **platform file**: identity (`common`), the two VPCs (`network`) and the EKS settings (`compute`). Every layer reads it with `yamldecode(file(...))` in its `values.tf`.

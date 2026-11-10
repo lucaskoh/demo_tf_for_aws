@@ -66,8 +66,8 @@ jobs:
       # kubernetes provider needs the cluster to still exist.
       # Each layer is retried a few times: some deletions fail once because AWS
       # finishes an earlier deletion asynchronously (see destroy-layer.sh).
-      # A destroy plan still reads the remote state of the layers it depends on,
-      # which is why network and compute are destroyed last.
+      # A destroy plan still reads the SSM parameters of the layers it depends on, which is why
+      # network and compute are destroyed last (their parameters are deleted with them).
 
       - name: destroy edge
         run: bash .github/scripts/destroy-layer.sh "$ENV_NAME" edge
