@@ -37,7 +37,8 @@ variable "node_port" {
   default     = null
 
   validation {
-    condition     = var.node_port == null || (var.node_port >= 30000 && var.node_port <= 32767)
+    # (a conditional, not ||: older Terraform evaluates both sides and a comparison with null fails)
+    condition     = var.node_port == null ? true : (var.node_port >= 30000 && var.node_port <= 32767)
     error_message = "node_port must be null or between 30000 and 32767."
   }
 }
