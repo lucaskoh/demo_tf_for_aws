@@ -192,3 +192,19 @@ make apply-all ENV=staging
 Change at least `common.name`, the VPC CIDRs and the `Environment` tag; the state bucket can stay the same, because the state key contains the environment name. `scripts/tf.sh <environment> <layer> <terraform args>` is the single entry point (the Makefile and the workflows use it): it sets `TF_VAR_environment`, passes the backend settings on `init`, and keeps one `.terraform` directory per environment and layer in `.terraform-data/`, so switching environments never reuses the wrong backend.
 
 In CI, `terraform-plan.yml` plans every folder under `envs/`, and apply and destroy take the environment name as an input.
+
+### Platform versions
+
+By default every environment runs the code of the commit it is planned from, so a change to `layers/` or `modules/` reaches all environments at once. An environment can instead **pin a released version** of the code:
+
+```yaml
+common:
+  platform_version: v1.2.0     # a git tag; "main" (or leaving it out) follows the commit
+```
+
+- What is pinned: the code Terraform reads (`layers/`, `modules/`, `templates/`, `assets/`). What is not: the tooling that runs it (`scripts/`, the `Makefile`, `.github/`) and the schemas, which always come from the commit. The values and the app files of the environment always come from the commit too, so what is planned is the environment you are looking at, run with the code of that release.
+- `scripts/tf.sh` does it for everything (`make`, the workflows, running by hand): `scripts/prepare-platform.sh` takes the code of the tag with `git archive` into `.terraform-data/<environment>/platform/<commit>/` and Terraform runs there. It prints `platform code: v1.2.0 (<commit>)`. The tag must exist locally (`git fetch --tags`; the workflows check out the whole history).
+- **Rolling out a change:** let `demo` follow `main`, pin the environment that matters to a release, and promote by a pull request that changes the pin. The pull request's plan shows what the upgrade would do, because it plans the new version against the real state. A pull request that only changes `layers/` shows no change for a pinned environment: that is the point.
+- **Schemas are not pinned,** so a pinned environment must stay valid for the current schema (`make validate-values` checks every environment against it). Make schema changes additive; for a breaking one, migrate the environments first.
+- **An older version does not know newer fields.** A pin must be at least the first release that has the settings your files use: a version that does not know a field ignores it silently (for example `allowed_images` or `image_proxies` need a release that contains them). The schema rejects unknown keys in the files, but it is the current schema, not the pinned one.
+- Releases are git tags (see [Releases](ci-cd.md#releases)). `make test-scripts` tests the pinning with a fake `terraform` and a throwaway repository.

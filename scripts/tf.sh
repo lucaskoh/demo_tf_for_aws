@@ -5,7 +5,9 @@
 #   scripts/tf.sh demo network init
 #   scripts/tf.sh demo network plan -out=tfplan
 #
-# - The layer code lives in layers/<layer>/ and is shared by all environments.
+# - The layer code lives in layers/<layer>/ and is shared by all environments. An environment can
+#   pin a released version of it with common.platform_version (a git tag such as v1.2.0): then the
+#   code of that tag is used instead of the working tree (see scripts/prepare-platform.sh).
 # - The environment is the folder envs/<environment>/ with a values.yaml. It is
 #   passed to Terraform as TF_VAR_environment.
 # - Backend: layers use a partial S3 backend. On `init`, bucket, region and key
@@ -51,6 +53,17 @@ fi
 common_value() {
   "$root/scripts/common-value.sh" "$values" "$1"
 }
+
+# A pinned environment runs the code of its tag; the values and app files still come from this checkout
+platform_version="$(common_value platform_version)"
+if [ -n "$platform_version" ] && [ "$platform_version" != "main" ]; then
+  code_root="$("$root/scripts/prepare-platform.sh" "$env_name" "$platform_version")"
+  layer_dir="$code_root/layers/$layer"
+  if [ ! -d "$layer_dir" ]; then
+    echo "Layer '$layer' does not exist in platform version $platform_version." >&2
+    exit 2
+  fi
+fi
 
 export TF_VAR_environment="$env_name"
 export TF_DATA_DIR="$root/.terraform-data/$env_name/$layer"

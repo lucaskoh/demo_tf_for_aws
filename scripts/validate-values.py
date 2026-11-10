@@ -178,10 +178,10 @@ def validate_file(path: Path, kind: str):
     # parser. If the file is written in a way awk does not understand, the backend would get an
     # empty or a wrong value, so compare both readers.
     if kind == "values" and not errors and isinstance(data, dict) and isinstance(data.get("common"), dict):
-        for key in ("state_bucket", "region"):
+        for key in ("state_bucket", "region", "platform_version"):
             expected = data["common"].get(key)
             if not isinstance(expected, str):
-                continue
+                continue  # (platform_version is optional: nothing to compare when it is absent)
             result = subprocess.run(
                 ["bash", str(ROOT / "scripts" / "common-value.sh"), str(path), key],
                 capture_output=True,

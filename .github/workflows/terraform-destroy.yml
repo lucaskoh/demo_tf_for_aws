@@ -47,7 +47,10 @@ jobs:
       # Passed through the environment, not interpolated into the scripts
       ENV_NAME: ${{ inputs.env_name }}
     steps:
+      # The whole history: an environment can pin a platform version, which is a git tag (scripts/prepare-platform.sh)
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: hashicorp/setup-terraform@v3
         with:
