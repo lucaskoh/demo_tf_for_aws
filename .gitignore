@@ -52,3 +52,7 @@ plan-output/
 
 # Per-environment Terraform data directories (see scripts/tf.sh)
 .terraform-data/
+
+# Python bytecode (scripts/*.py)
+__pycache__/
+*.pyc
