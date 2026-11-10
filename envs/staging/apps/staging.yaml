@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=../../../schemas/apps.schema.json
+# The staging environment. Besides the same two pages as demo, it exercises what demo does not:
+# a custom image with its own health check, a workload that nobody routes to (ClusterIP only) and
+# a second EC2 instance whose private IP is chosen by AWS.
+
+workloads:
+  web: {}                              # the built-in demo page
+  hello:
+    image: nginxdemos/hello:plain-text # a custom image; it listens on 80 and answers / with a short text
+    health_check_path: /
+  worker:                              # no backend points here: reachable only inside the cluster
+    image: nginx:1.27-alpine
+
+instances:
+  legacy:
+    template: nginx-demo
+  legacy-two:
+    template: nginx-demo
+
+backends:
+  eks-page:
+    path: html1
+    workload: web
+  hello-page:
+    path: hello
+    workload: hello
+  ec2-page:
+    path: html2
+    instance: legacy
+  ec2-page-two:
+    path: html3
+    instance: legacy-two

@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=../../schemas/values.schema.json
+# Environment values shared by all layers (network, compute, workloads, edge).
+# Each layer reads this file with yamldecode(file(...)), see values.tf in the layer.
+#
+# Not here (they come from GitHub variables / terraform.tfvars, see docs/ci-cd.md):
+#   eks_admin_principal_arns, ci_plan_role_arn, ci_apply_role_arn,
+#   domain_name, record_name.
+#
+# The layers use a partial S3 backend: scripts/tf.sh reads common.state_bucket and common.region
+# from this file and passes them to `terraform init`. Write both as "key: value" on one line
+# directly under `common:` (make validate-values checks that).
+
+common:
+  # Short name prefix for resources (lowercase letters, digits, hyphens; max 20 characters)
+  name: staging
+  region: ap-northeast-1
+  # S3 bucket holding the Terraform state of all layers (state_bucket_name output of bootstrap)
+  state_bucket: lucaskoh-tfstate-demo-22f4d2
+  # Applied to every resource through default_tags; each layer adds a "Layer" tag
+  tags:
+    Project: aws-multi-vpc-terraform
+    Environment: staging
+    ManagedBy: terraform
+  # Port of the NLB and ALB listeners, and of Nginx on the EC2 backend
+  http_port: 80
+  # Optional: the version of the platform code (layers, modules, templates, assets) this environment
+  # runs: a git tag such as v1.2.0. Without it, or with "main", it follows the code of the commit.
+  # The values and the app files always come from the commit. See docs/ci-cd.md ("Releases").
+  #   platform_version: v1.0.0
+  # Environment repository (an environment repo that holds only envs/ and runs this platform from a
+  # git URL, see docs/configuration.md): platform_source needs platform_version, which must be a tag.
+  #   platform_source: github.com/your-org/platform
+  # Optional: where workload images may come from (see docs/configuration.md, "Allowed images").
+  # An entry that ends with / allows everything beneath it; any other entry is one repository.
+  # Without it any image is allowed. Workloads without "image" (the demo page) are not affected.
+  #   allowed_images:
+  #     - nginx
+  #     - ghcr.io/your-org/
+  # Optional: pull every image through your own proxy registry (for example Harbor proxy cache
+  # projects): upstream registry -> proxy project. Teams keep writing nginx:1.27 or ghcr.io/org/app:1.
+  # When set, an image from a registry that is not listed is rejected (see docs/configuration.md).
+  #   image_proxies:
+  #     docker.io: harbor.example.com/dockerhub
+  #     ghcr.io: harbor.example.com/ghcr
+
+network:
+  # VPC CIDRs must not overlap (subnets are derived from them: /16 -> /24)
+  vpc_a_cidr: 10.2.0.0/16 # NLB, ALB, EKS
+  vpc_b_cidr: 10.3.0.0/16 # EC2
+
+compute:
+  ec2_instance_type: t3.micro
+  eks:
+    # Several instance types improve Spot availability
+    instance_types: [t3.small, t3a.small]
+    capacity_type: SPOT # SPOT or ON_DEMAND
+    desired_size: 1
+    min_size: 1
+    max_size: 2
+    # Who may reach the public Kubernetes API endpoint (optional, default ["0.0.0.0/0"]). Every request still
+    # needs an IAM identity with an EKS access entry. The workloads layer talks to the API from the CI runner:
+    # a narrower list also locks out the GitHub-hosted runners (use a self-hosted runner in an allowed range).
+    #   public_access_cidrs: ["203.0.113.10/32"]
+  # EKS Kubernetes version, e.g. "1.33" (quote it). null = the EKS default for new clusters.
+  kubernetes_version: null
+
+# The workloads, instances and backends (what runs, and how traffic reaches it) are not here:
+# they are declared by the teams in the files of envs/<environment>/apps/ (see docs/configuration.md).
