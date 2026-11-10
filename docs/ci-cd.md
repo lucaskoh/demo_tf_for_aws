@@ -13,7 +13,7 @@ flowchart LR
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `terraform-plan.yml` | Pull request to `main` | Runs the schema tests, `fmt -check`, the module tests (`terraform test`), `validate` (all layers), `tflint`, `tfsec`, then plans every layer in order and posts (or updates) one PR comment with a section per layer. Layers whose upstream layers are not deployed yet are reported as skipped. Uses the read-only **plan role**. |
+| `terraform-plan.yml` | Pull request to `main` | Runs the schema tests, `fmt -check`, the module and script tests (`terraform test`), `validate` (all layers), `tflint`, `tfsec`, then plans every layer in order and posts (or updates) one PR comment with a section per layer. Layers whose upstream layers are not deployed yet are reported as skipped. Uses the read-only **plan role**. |
 | `terraform-apply.yml` | Manual (`workflow_dispatch`, input `env_name`, default `demo`) | Plans and applies each layer in order (`network`, `compute`, `workloads`, `edge`) in the `production` environment. Must run from `main` and needs `production` approval. Merging does not deploy. Uses the **apply role**. |
 | `terraform-destroy.yml` | Manual (`workflow_dispatch`, inputs `confirm` and `env_name`) | Destroys the layers in reverse order (`edge`, `workloads`, `compute`, `network`). Requires typing `destroy`, running from `main`, and `production` approval. Each layer is retried up to three times, because some deletions fail once while AWS finishes an earlier deletion asynchronously. The NLB module also waits (`deregistration_wait`, 60s by default) between removing the ALB from its target group and the deletion of the ALB listener, because the listener cannot be deleted while the deregistration is still in progress. |
 
@@ -78,6 +78,18 @@ What it can do once assumed is **everything** (`AdministratorAccess`). For real 
 7. **Encrypt the state bucket with a customer managed KMS key** instead of SSE-S3. It gives you a key policy and an audit trail of every use of the key. It costs about US$1 per month, and every role that reads or writes the state (the plan role, the apply role, people) then also needs access to the key. The security scanner (tfsec) warns about this; the warning is ignored on purpose in `bootstrap/main.tf` and this is the reason.
 
 None of this is implemented here; it is the plan for turning the demo into something you would run for real.
+
+## Releases
+
+A release is a git tag `vMAJOR.MINOR.PATCH` on `main`. An environment pins one with `common.platform_version` (see [Platform versions](configuration.md#platform-versions)).
+
+1. Merge what should be in the release, and wait for the checks on `main`.
+2. Create the release from `main`: `gh release create v1.2.0 --target main --generate-notes` (or in the GitHub UI). Use a new tag every time; never move or delete one that an environment may pin.
+3. Promote: a pull request that sets `platform_version: v1.2.0` in `envs/<environment>/values.yaml`. Its plan comment shows what the upgrade does to that environment. `values.yaml` is owned by the platform (CODEOWNERS), so the platform owner reviews it.
+
+**Protect the tags.** The apply role runs the code of the pinned tag, so whoever can move a tag can change what runs with that role. In **Settings → Rules → Rulesets** add a tag ruleset for `v*` that restricts creation to the maintainers and blocks updates and deletions. The workflows do not check it.
+
+The first release must contain the `platform_version` support itself: an environment cannot pin an older version, because that code does not know the setting and the schema of that time would reject it.
 
 ## Known caveats
 

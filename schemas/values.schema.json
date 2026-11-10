@@ -53,6 +53,12 @@
           "minimum": 1,
           "maximum": 65535
         },
+        "platform_version": {
+          "description": "Version of the platform code (layers, modules, templates, assets) this environment runs: a git tag such as v1.2.0, or main to follow the code of the commit (the default). The values and app files always come from the commit. Keep it flat under common: scripts/tf.sh reads it with awk.",
+          "type": "string",
+          "pattern": "^(main|v[0-9]+\\.[0-9]+\\.[0-9]+)$",
+          "x-error-message": "must be 'main' or a version tag such as v1.2.0"
+        },
         "image_proxies": {
           "description": "Proxy registries, for example Harbor proxy cache projects: upstream registry -> proxy path. When set, every workload image is pulled through the proxy of its registry (Docker Hub names without a registry count as docker.io), and an image from a registry that is not listed is rejected. Without it images are pulled as written.",
           "type": "object",

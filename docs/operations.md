@@ -13,8 +13,9 @@ The Makefile wraps the common commands. Run `make help` to list them. The enviro
 | `make validate-values` | Check every `envs/*/values.yaml` and the EC2 templates against their JSON Schema |
 | `make test-schemas` | Run the schema fixtures in `schemas/tests` |
 | `make test-modules` | Run the `terraform test` suites of the modules (`modules/*/tests`, today `env-resolver`); plan-only, no AWS credentials |
+| `make test-scripts` | Test `scripts/tf.sh` and `scripts/prepare-platform.sh` (platform versions) with a fake `terraform`; no AWS credentials |
 | `make check-docs` | Check the links of `README.md` and `docs/*.md`: every file exists and every `#anchor` matches a heading |
-| `make validate` | `validate-values`, `test-modules` and `check-docs`, then `init -backend=false` and `validate` for every layer; no AWS credentials needed |
+| `make validate` | `validate-values`, `test-modules`, `test-scripts` and `check-docs`, then `init -backend=false` and `validate` for every layer; no AWS credentials needed |
 | `make lint` | Run `tflint` on all modules |
 | `make init LAYER=...` | Initialize one layer with the S3 backend |
 | `make plan LAYER=...` | Create an execution plan for one layer, saved as `tfplan` |
