@@ -87,7 +87,7 @@ A release is a git tag `vMAJOR.MINOR.PATCH` on `main`. An environment pins one w
 2. Create the release from `main`: `gh release create v1.2.0 --target main --generate-notes` (or in the GitHub UI). Use a new tag every time; never move or delete one that an environment may pin.
 3. Promote: a pull request that sets `platform_version: v1.2.0` in `envs/<environment>/values.yaml`. Its plan comment shows what the upgrade does to that environment. `values.yaml` is owned by the platform (CODEOWNERS), so the platform owner reviews it.
 
-**Protect the tags.** The apply role runs the code of the pinned tag, so whoever can move a tag can change what runs with that role. In **Settings → Rules → Rulesets** add a tag ruleset for `v*` that restricts creation to the maintainers and blocks updates and deletions. The workflows do not check it.
+**Protect the tags.** The apply role runs the code of the pinned tag, so whoever can move a tag can change what runs with that role. In **Settings → Rules → Rulesets** add a tag ruleset for `v*` (enforcement active, no bypass) with the rules **Restrict updates**, **Restrict deletions** and **Block force pushes**: a published version can then not be moved or removed (the repository has one named `protect release tags`). To also limit who can *create* a version tag, add **Restrict creations** and list the maintainers' role as a bypass actor. The workflows do not check the ruleset.
 
 The first release must contain the `platform_version` support itself: an environment cannot pin an older version, because that code does not know the setting and the schema of that time would reject it.
 
