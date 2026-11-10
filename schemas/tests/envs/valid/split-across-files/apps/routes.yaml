@@ -1,0 +1,7 @@
+backends:
+  home:
+    path: home
+    workload: web
+  legacy:
+    path: legacy
+    instance: legacy

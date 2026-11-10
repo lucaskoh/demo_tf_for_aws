@@ -36,8 +36,23 @@ data "aws_availability_zones" "available" {
     # ---- workloads, instances and backends (see backends.tf) ----
 
     precondition {
+      condition     = length(local.sections_in_values) == 0
+      error_message = "values.yaml is the platform file and does not declare ${join(", ", local.sections_in_values)} any more. Move them to a file in envs/<environment>/apps/."
+    }
+
+    precondition {
+      condition     = length(local.ignored_app_files) == 0
+      error_message = "Only files that end in .yaml are read from envs/<environment>/apps/. These are ignored: ${join(", ", local.ignored_app_files)}. Rename them."
+    }
+
+    precondition {
+      condition     = length(local.duplicate_names) == 0
+      error_message = "A name may be defined once in the whole environment, but ${join("; ", local.duplicate_messages)}."
+    }
+
+    precondition {
       condition     = length(local.backends) > 0
-      error_message = "values.yaml must declare at least one backend under backends:."
+      error_message = "The files in envs/<environment>/apps/ must declare at least one backend under backends:."
     }
 
     precondition {

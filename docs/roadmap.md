@@ -1,6 +1,6 @@
 # Planned architecture changes
 
-The goal is a small internal platform: the platform team owns the Terraform code, the modules and the guardrails, and other people deploy by editing one `values.yaml`.
+The goal is a small internal platform: the platform team owns the Terraform code, the modules and the guardrails, and other people deploy by editing a few YAML files.
 
 **Done**
 
@@ -14,11 +14,11 @@ The goal is a small internal platform: the platform team owns the Terraform code
 8. **EC2 image templates.** Instances must use a template provided by the platform team (see [EC2 image templates](configuration.md#ec2-image-templates)).
 9. **Validate `values.yaml` against a schema.** JSON Schema checks in CI (with annotations on the pull request), locally and in the editor (see [Configuration](configuration.md#configuration)).
 10. **SSM parameters instead of `terraform_remote_state`.** Each layer publishes the few values that others read, and no layer reads another layer's state (see [How layers share values](layers-and-state.md#how-layers-share-values)).
+11. **Split `values.yaml` by owner.** The platform file `envs/<environment>/values.yaml` (`common`, `network`, `compute`) and any number of app files under `envs/<environment>/apps/` (`workloads`, `instances`, `backends`). The files are merged as a union, a name that is defined twice is an error that names both files, and a backend may point to a workload of another file (see [App files](configuration.md#app-files)).
 
 **Planned, in this order**
 
-1. **Split `values.yaml` by owner.** Today one file mixes what the platform decides (`common`, `network`, `compute`) with what users decide (`workloads`, `instances`, `backends`). The plan is to keep `envs/<environment>/values.yaml` for the platform part and to move the user part to `envs/<environment>/apps/*.yaml`: one file per team or application, any number of files. The files are merged as a union, and a name that is defined twice is an error that names both files (nothing is overridden). Only the network layer reads these sections, so the merge lives in one place.
-2. **Separate who may change what.** `CODEOWNERS` works per file, which is why the split comes first: the platform owns `layers/`, `modules/`, `templates/`, `schemas/` and the `values.yaml` of each environment, and a team owns its own file under `apps/`. With a single maintainer, `CODEOWNERS` starts as automatic review requests only; "require review from code owners" can be turned on once a second account or team exists (nobody can approve their own pull request). An allowlist for container images and versioned platform code belong here too.
+1. **Separate who may change what.** `CODEOWNERS` works per file, which is why `values.yaml` was split first: the platform owns `layers/`, `modules/`, `templates/`, `schemas/` and the `values.yaml` of each environment, and a team owns its own file under `apps/`. With a single maintainer, `CODEOWNERS` starts as automatic review requests only; "require review from code owners" can be turned on once a second account or team exists (nobody can approve their own pull request). An allowlist for container images and versioned platform code belong here too.
 
 **Later**
 

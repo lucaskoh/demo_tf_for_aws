@@ -1,0 +1,14 @@
+# expect: less than the minimum of 30000
+workloads:
+  web:
+    node_port: 99
+instances:
+  legacy:
+    template: nginx-demo
+backends:
+  home:
+    path: home
+    workload: web
+  legacy:
+    path: legacy
+    instance: legacy

@@ -1,0 +1,4 @@
+backends:
+  one:
+    path: two
+    instance: box

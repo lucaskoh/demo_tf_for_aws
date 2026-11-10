@@ -1,0 +1,16 @@
+# expect: duplicate key 'web'
+workloads:
+  web:
+    replicas: 2
+  web:
+    replicas: 3
+instances:
+  legacy:
+    template: nginx-demo
+backends:
+  home:
+    path: home
+    workload: web
+  legacy:
+    path: legacy
+    instance: legacy

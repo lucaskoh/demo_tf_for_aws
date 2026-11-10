@@ -1,0 +1,15 @@
+# expect: exactly one target
+workloads:
+  web:
+    replicas: 2
+instances:
+  legacy:
+    template: nginx-demo
+backends:
+  home:
+    path: home
+    workload: web
+    instance: legacy
+  legacy:
+    path: legacy
+    instance: legacy

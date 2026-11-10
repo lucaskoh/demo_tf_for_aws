@@ -4,7 +4,7 @@
 [![AWS](https://img.shields.io/badge/AWS-ap--northeast--1-FF9900?logo=amazonaws)](https://aws.amazon.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-A low-cost, reproducible reference architecture that serves **two backends living in two different VPCs** behind a single entry point, using **NLB → ALB → path-based routing**, **VPC Peering** and **Security Group chaining**. It is also a small model of a platform team: developers describe what they want in one `values.yaml`, and the platform builds the rest.
+A low-cost, reproducible reference architecture that serves **two backends living in two different VPCs** behind a single entry point, using **NLB → ALB → path-based routing**, **VPC Peering** and **Security Group chaining**. It is also a small model of a platform team: teams describe what they want in a few YAML files, and the platform builds the rest.
 
 The demo declares two backends:
 
@@ -15,8 +15,8 @@ You can declare more of each kind, and an EKS workload can run your own containe
 
 ## What is in it
 
-- **Self-service configuration.** Developers declare workloads, instances and routes in `values.yaml`. Security group rules, NodePorts and ALB rules are derived, and mistakes are rejected by a JSON Schema and by Terraform checks, with the file and line shown on the pull request.
-- **Layered Terraform.** Four layers (`network`, `compute`, `workloads`, `edge`), each with its own state, hand values to the next one through SSM parameters. A new environment is a folder with a `values.yaml`.
+- **Self-service configuration.** Teams declare workloads, instances and routes in their own files under `envs/<environment>/apps/`, while the platform settings stay in `values.yaml`. Security group rules, NodePorts and ALB rules are derived, and mistakes are rejected by a JSON Schema and by Terraform checks, with the file and line shown on the pull request.
+- **Layered Terraform.** Four layers (`network`, `compute`, `workloads`, `edge`), each with its own state, hand values to the next one through SSM parameters. A new environment is a folder with a `values.yaml` and its app files.
 - **CI/CD without long-lived keys.** GitHub Actions gets short-lived credentials through OIDC. Pull requests run format, schema, validate, tflint and tfsec checks and post the plan; apply and destroy are manual and need the approval of a GitHub environment.
 - **Low cost.** No NAT Gateway and no Transit Gateway: about US$0.2 per hour while it runs, and it is created and destroyed in minutes.
 
@@ -106,7 +106,7 @@ If the CI login fails with `Not authorized to perform sts:AssumeRoleWithWebIdent
 |---|---|
 | [Architecture details](docs/architecture.md) | Design decisions, network plan, security model and limitations |
 | [Layers and state](docs/layers-and-state.md) | Repository layout, the four layers, remote state and how layers share values |
-| [Configuration](docs/configuration.md) | `values.yaml`: workloads, instances, routes, EC2 image templates and environments |
+| [Configuration](docs/configuration.md) | The platform file and the app files: workloads, instances, routes, EC2 image templates and environments |
 | [CI/CD](docs/ci-cd.md) | Workflows, one-time setup, the security model of the pipeline and the path to a least-privilege apply role |
 | [Operations](docs/operations.md) | Makefile commands, verifying a deployment, cost estimate and cleanup |
 | [Planned architecture changes](docs/roadmap.md) | What is done, what is next and the deliberate shortcuts of the demo |

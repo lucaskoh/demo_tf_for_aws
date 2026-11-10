@@ -1,0 +1,11 @@
+# expect: did you mean 'workloads'
+workload:
+  web:
+    replicas: 2
+instances:
+  legacy:
+    template: nginx-demo
+backends:
+  home:
+    path: home
+    workload: web
