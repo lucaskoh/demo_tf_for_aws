@@ -17,10 +17,11 @@ The goal is a small internal platform: the platform team owns the Terraform code
 11. **Split `values.yaml` by owner.** The platform file `envs/<environment>/values.yaml` (`common`, `network`, `compute`) and any number of app files under `envs/<environment>/apps/` (`workloads`, `instances`, `backends`). The files are merged as a union, a name that is defined twice is an error that names both files, and a backend may point to a workload of another file (see [App files](configuration.md#app-files)).
 12. **Resolver as a tested module.** The code that merges the app files, derives the numbers and checks the rules is `modules/env-resolver`, covered by `terraform test` (see [Where the rules live](configuration.md#workloads-instances-and-backends)).
 13. **Owners per file.** `.github/CODEOWNERS` requests a review from the platform owner for the platform paths and has a place for each team's app files. It only requests reviews for now: "require review from code owners" cannot be satisfied by a single maintainer (nobody approves their own pull request) and stays off until a second account or team exists.
+14. **Container image allowlist.** `common.allowed_images` restricts where workload images may come from (see [Allowed images](configuration.md#allowed-images)).
 
 **Planned, in this order**
 
-1. **Image allowlist and versioned platform code** (a team may only use approved container images; teams pin a version of the platform code instead of following `main`).
+1. **Versioned platform code.** An environment pins a released version of the platform code instead of following `main`, so a change rolls out environment by environment.
 
 **Later**
 

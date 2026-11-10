@@ -1,0 +1,24 @@
+common:
+  name: demo
+  region: ap-northeast-1
+  state_bucket: example-tfstate-bucket
+  tags:
+    Project: demo
+    Environment: demo
+  http_port: 80
+  allowed_images:
+    - nginx
+    - ghcr.io/example-org/
+    - localhost:5000/app
+network:
+  vpc_a_cidr: 10.0.0.0/16
+  vpc_b_cidr: 10.1.0.0/16
+compute:
+  ec2_instance_type: t3.micro
+  eks:
+    instance_types: [t3.small, t3a.small]
+    capacity_type: SPOT
+    desired_size: 1
+    min_size: 1
+    max_size: 2
+  kubernetes_version: null

@@ -23,6 +23,12 @@ common:
     ManagedBy: terraform
   # Port of the NLB and ALB listeners, and of Nginx on the EC2 backend
   http_port: 80
+  # Optional: where workload images may come from (see docs/configuration.md, "Allowed images").
+  # An entry that ends with / allows everything beneath it; any other entry is one repository.
+  # Without it any image is allowed. Workloads without "image" (the demo page) are not affected.
+  #   allowed_images:
+  #     - nginx
+  #     - ghcr.io/your-org/
 
 network:
   # VPC CIDRs must not overlap (subnets are derived from them: /16 -> /24)

@@ -52,6 +52,17 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
+        },
+        "allowed_images": {
+          "description": "Repositories that workload images may come from. An entry that ends with / allows everything beneath that path (ghcr.io/your-org/); any other entry allows exactly that repository with any tag or digest (nginx). Without it any image is allowed. Workloads without image (the built-in demo page) are not affected.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._/-]*(:[0-9]+/[a-z0-9._/-]*)?$",
+            "x-error-message": "must be a repository such as nginx or ghcr.io/your-org/ (lowercase, no tag, no digest)"
+          }
         }
       }
     },
