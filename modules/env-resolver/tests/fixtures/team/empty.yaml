@@ -1,0 +1,4 @@
+# A file whose sections are empty is fine
+workloads: {}
+instances: {}
+backends: {}

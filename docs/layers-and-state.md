@@ -37,6 +37,7 @@ demo_tf_for_aws/
 │   ├── alb/
 │   ├── nlb/
 │   ├── dns/
+│   ├── env-resolver/         # turns the app files into workloads, instances, backends + the rules (has tests)
 │   ├── ssm-publisher/        # publishes values as SSM parameters (end of a layer)
 │   └── ssm-reader/           # reads what a layer before it published (start of a layer)
 ├── layers/                   # Terraform code of the four layers, shared by every environment
