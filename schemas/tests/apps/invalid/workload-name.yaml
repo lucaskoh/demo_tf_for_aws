@@ -1,0 +1,14 @@
+# expect: workload names must be
+workloads:
+  Web:
+    replicas: 2
+instances:
+  legacy:
+    template: nginx-demo
+backends:
+  home:
+    path: home
+    workload: web
+  legacy:
+    path: legacy
+    instance: legacy

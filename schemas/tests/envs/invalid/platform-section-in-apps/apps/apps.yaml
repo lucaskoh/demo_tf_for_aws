@@ -1,0 +1,8 @@
+common:
+  name: demo
+workloads:
+  web: {}
+backends:
+  home:
+    path: home
+    workload: web

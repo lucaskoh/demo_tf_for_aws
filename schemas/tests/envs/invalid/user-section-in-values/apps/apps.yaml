@@ -1,0 +1,6 @@
+workloads:
+  other: {}
+backends:
+  home:
+    path: home
+    workload: other

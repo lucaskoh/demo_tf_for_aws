@@ -1,0 +1,14 @@
+# expect: must not contain
+workloads:
+  web:
+    page_heading: "<script>"
+instances:
+  legacy:
+    template: nginx-demo
+backends:
+  home:
+    path: home
+    workload: web
+  legacy:
+    path: legacy
+    instance: legacy

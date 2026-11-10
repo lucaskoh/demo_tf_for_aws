@@ -1,0 +1,7 @@
+instances:
+  box:
+    template: nginx-demo
+backends:
+  one:
+    path: one
+    instance: box

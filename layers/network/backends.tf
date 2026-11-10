@@ -1,19 +1,48 @@
 # What runs (workloads on EKS, instances on EC2) and how traffic reaches it
 # (backends: a path routed to one workload or one instance), resolved once from
-# envs/<environment>/values.yaml.
+# the files in envs/<environment>/apps/.
 #
 # This is the single source of truth for every number that must be the same in
-# several layers: NodePorts, EC2 private IPs and ALB rule priorities. The other
+# several layers: NodePorts and ALB rule priorities. The other
 # layers read the result from this layer's `workloads`, `instances` and
 # `backends` outputs and never compute it again. Unless set explicitly in
-# values.yaml, the numbers are derived from the name with a hash, so adding or
+# the apps files, the numbers are derived from the name with a hash, so adding or
 # removing something never changes the numbers of the others. Collisions are
 # rejected by the preconditions in main.tf (data.aws_availability_zones.available).
 locals {
-  # merge(..., {}) turns a missing or empty section into {} whatever shape the entries have
-  workloads_raw = merge(try(local.values.workloads, {}), {})
-  instances_raw = merge(try(local.values.instances, {}), {})
-  backends_raw  = merge(try(local.values.backends, {}), {})
+  # ---- the app files --------------------------------------------------------
+  # Any number of files under envs/<environment>/apps/, also in sub-folders (for example one folder per
+  # team). They are merged as a union: a name that two files define is an error (see main.tf), and nothing
+  # is overridden. merge(..., {}) turns a missing or empty section into {} whatever shape the entries have.
+  apps_dir = "${path.module}/../../envs/${var.environment}/apps"
+  # Sorted, so that the result and the messages do not depend on the order the files are listed in
+  app_files = sort(tolist(fileset(local.apps_dir, "**/*.yaml")))
+  # Files that are not read because of their name (.yml, .yaml.bak, ...): reported, never ignored silently
+  ignored_app_files = sort([for f in tolist(fileset(local.apps_dir, "**")) : f if !endswith(f, ".yaml")])
+  apps              = { for f in local.app_files : f => yamldecode(file("${local.apps_dir}/${f}")) }
+
+  workloads_raw = merge([for f, a in local.apps : merge(try(a.workloads, {}), {})]...)
+  instances_raw = merge([for f, a in local.apps : merge(try(a.instances, {}), {})]...)
+  backends_raw  = merge([for f, a in local.apps : merge(try(a.backends, {}), {})]...)
+
+  # Where every name is defined, to report a name that is defined twice
+  app_sections = { workload = "workloads", instance = "instances", backend = "backends" }
+  app_entries = flatten([
+    for f, a in local.apps : [
+      for kind, section in local.app_sections : [
+        for name in keys(merge(try(a[section], {}), {})) : { file = f, kind = kind, name = name }
+      ]
+    ]
+  ])
+  duplicate_names = {
+    for key in distinct([for e in local.app_entries : "${e.kind} '${e.name}'"]) :
+    key => [for e in local.app_entries : "apps/${e.file}" if "${e.kind} '${e.name}'" == key]
+    if length([for e in local.app_entries : e if "${e.kind} '${e.name}'" == key]) > 1
+  }
+  duplicate_messages = [for key, files in local.duplicate_names : "${key} is defined in ${join(" and ", files)}"]
+
+  # The old layout kept these sections in values.yaml; they are not read from there any more
+  sections_in_values = [for s in values(local.app_sections) : s if contains(keys(local.values), s)]
 
   # EC2 image templates maintained by the platform team (templates/ec2/templates.yaml)
   ec2_templates = yamldecode(file("${path.module}/../../templates/ec2/templates.yaml"))

@@ -1,0 +1,14 @@
+# expect: 'template' is a required property
+workloads:
+  web:
+    replicas: 2
+instances:
+  legacy:
+    instance_type: t3.micro
+backends:
+  home:
+    path: home
+    workload: web
+  legacy:
+    path: legacy
+    instance: legacy

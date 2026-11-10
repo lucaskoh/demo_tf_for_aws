@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "An apps file of an environment (workloads, instances, backends)",
+  "description": "Describes a file under envs/<environment>/apps/ (any number of files, also in sub-folders). Together they declare what runs and how traffic reaches it. A name may be defined once in the whole environment (Terraform and scripts/validate-values.py check that across files). This schema checks the shape; Terraform checks what needs other data (a backend points to an existing workload or instance, unique paths and numbers, the EC2 template exists).",
+  "type": "object",
+  "minProperties": 1,
+  "additionalProperties": false,
+  "properties": {
+    "workloads": {
+      "description": "Deployments on the EKS cluster. Only the ones that a backend routes to get a NodePort and security group rules; the others are reachable inside the cluster only.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "x-error-message": "workload names must be 1-40 characters: lowercase letters, digits and hyphens"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/workload"
+      }
+    },
+    "instances": {
+      "description": "Nginx instances in VPC-B, reached over the VPC peering.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "x-error-message": "instance names must be 1-40 characters: lowercase letters, digits and hyphens"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/instance"
+      }
+    },
+    "backends": {
+      "description": "Routes on the ALB: a path that leads to one workload or one instance.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9-]+$",
+        "x-error-message": "backend names must be lowercase letters, digits and hyphens"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/backend"
+      }
+    }
+  },
+  "$defs": {
+    "page_text": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[^<>\"\\n\\r]*$",
+      "x-error-message": "must not contain <, > or \" characters or line breaks"
+    },
+    "workload": {
+      "description": "A Deployment. Everything is optional; an empty entry is the built-in Nginx demo page.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "description": "Container image, for example nginx:1.27-alpine. Without it the built-in Nginx demo page is served at every path that routes to the workload.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._/:@-]*$",
+          "x-error-message": "must look like an image reference, for example nginx:1.27-alpine"
+        },
+        "container_port": {
+          "description": "Port the container listens on (the demo page needs 80). Default 80.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "replicas": {
+          "description": "Number of pods. Default 1.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "health_check_path": {
+          "description": "HTTP path of the readiness probe. For a custom image it is also the default ALB health check. Default /.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^/",
+          "x-error-message": "must start with /"
+        },
+        "node_port": {
+          "description": "NodePort (30000-32767). Derived from the name when not set. Only workloads that a backend routes to get one.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 30000,
+          "maximum": 32767
+        },
+        "page_title": {
+          "$ref": "#/$defs/page_text",
+          "description": "HTML title of the built-in demo page."
+        },
+        "page_heading": {
+          "$ref": "#/$defs/page_text",
+          "description": "Heading of the built-in demo page."
+        }
+      }
+    },
+    "instance": {
+      "description": "An EC2 instance created from an image template.",
+      "type": "object",
+      "required": [
+        "template"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "template": {
+          "description": "Image template from templates/ec2/templates.yaml (AMI and boot script). Required: an instance cannot choose its own image or script.",
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "instance_type": {
+          "description": "Instance type. Default: compute.ec2_instance_type.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z][a-z0-9-]*\\.[a-z0-9]+$",
+          "x-error-message": "must be an instance type such as t3.micro"
+        },
+        "private_ip": {
+          "description": "Fixed private IP inside the VPC-B subnet. Optional: by default AWS picks a free address of the subnet, so nothing can collide. An address chosen by AWS changes when the instance is replaced; the edge layer then has to be applied again to follow it.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}$",
+          "x-error-message": "must be an IPv4 address such as 10.1.1.100"
+        },
+        "page_title": {
+          "$ref": "#/$defs/page_text",
+          "description": "HTML title of the demo page."
+        },
+        "page_heading": {
+          "$ref": "#/$defs/page_text",
+          "description": "Heading of the demo page."
+        }
+      }
+    },
+    "backend": {
+      "description": "A route. The ALB forwards /<path> and /<path>/* without rewriting, so an app must serve under that prefix.",
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false,
+      "x-error-message": "a backend needs exactly one target: either 'workload: <name>' or 'instance: <name>'",
+      "oneOf": [
+        {
+          "required": [
+            "workload"
+          ]
+        },
+        {
+          "required": [
+            "instance"
+          ]
+        }
+      ],
+      "properties": {
+        "path": {
+          "description": "URL path without slashes (one segment), for example html1 for /html1.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "x-error-message": "must be one URL segment: letters, digits, dots, underscores and hyphens, no slashes"
+        },
+        "workload": {
+          "description": "Name of a workload under workloads:.",
+          "type": "string"
+        },
+        "instance": {
+          "description": "Name of an instance under instances:.",
+          "type": "string"
+        },
+        "health_check_path": {
+          "description": "ALB health check path. Default /<path>/index.html for the demo page, the workload's health_check_path for a custom image.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^/",
+          "x-error-message": "must start with /"
+        },
+        "priority": {
+          "description": "ALB rule priority (1-50000). Derived from the name when not set. Paths are different, so it only matters for overlapping prefixes.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 50000
+        }
+      }
+    }
+  }
+}

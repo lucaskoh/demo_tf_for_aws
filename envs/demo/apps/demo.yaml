@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../schemas/apps.schema.json
+# Workloads, instances and backends of the demo environment. One file per team or application; any number of
+# files, also in sub-folders. A name may be defined once in the whole environment.
+
+# What runs, and how traffic reaches it. Names are lowercase letters, digits and hyphens.
+
+# Deployments on the EKS cluster. Only the ones that a backend routes to get a NodePort
+# and security group rules; the others are reachable inside the cluster only.
+workloads:
+  web:
+    # Optional. Without "image" the built-in Nginx demo page is served at the routed path(s).
+    #   image: nginx:1.27-alpine
+    #   container_port: 80             # the demo page needs 80
+    #   replicas: 1
+    #   health_check_path: /           # readiness probe
+    #   node_port: 30080               # derived from the name when not set (30000-32767)
+    #   page_title / page_heading      # texts of the demo page
+
+# Nginx instances in VPC-B, reached over the VPC peering.
+instances:
+  legacy:
+    template: nginx-demo # required: an image template from templates/ec2/templates.yaml
+    # Optional:
+    #   instance_type: t3.micro        # default: compute.ec2_instance_type
+    #   private_ip: 10.1.1.100         # default: AWS picks a free address (it changes if the instance is replaced)
+    #   page_title / page_heading
+
+# Routes on the ALB: a path that leads to one workload or one instance.
+# "<common.name>-<backend name>-tg" must fit in 32 characters.
+backends:
+  eks-page:
+    path: html1 # served at /html1 (one URL segment; the app must serve under this prefix)
+    workload: web
+    # Optional:
+    #   health_check_path: /html1/index.html   # ALB health check (default: demo page, or / for a custom image)
+    #   priority: 10                           # derived from the name when not set
+  ec2-page:
+    path: html2
+    instance: legacy

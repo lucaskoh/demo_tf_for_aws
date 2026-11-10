@@ -1,11 +1,14 @@
 # Configuration
 
-Configuration comes from two places:
+Configuration comes from three places:
 
-1. **`envs/demo/values.yaml`** holds the environment values and is shared by all layers. Each layer reads it with `yamldecode(file(...))` in its `values.tf`, and checks it with preconditions (for example the name format, valid and non-overlapping CIDRs, and the workloads, instances and backends: targets, paths, ports and IPs). A new environment is a new values file.
-2. **Variables** hold the values that come from outside the repository: set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables and secrets.
+1. **`envs/<environment>/values.yaml`** is the **platform file**: identity (`common`), the two VPCs (`network`) and the EKS settings (`compute`). Every layer reads it with `yamldecode(file(...))` in its `values.tf`.
+2. **The files under `envs/<environment>/apps/`** are the **app files**: what runs and how traffic reaches it (`workloads`, `instances`, `backends`). Teams own these. See [App files](#app-files).
+3. **Variables** hold the values that come from outside the repository: set them in `terraform.tfvars` inside the layer folder (see the `terraform.tfvars.example` files); in CI they come from GitHub repository variables and secrets.
 
-**`values.yaml` is checked against a schema** (`schemas/values.schema.json`) before anything is planned: unknown or misspelled keys (for example `replica` instead of `replicas`), wrong types, values out of range, missing required fields, and a backend without exactly one target are reported with the file and line, for example `envs/demo/values.yaml:24: workloads.web: unknown key 'replica' - did you mean 'replicas'?`. This runs
+Terraform checks the content with preconditions when the network layer is planned (for example the name format, valid and non-overlapping CIDRs, and the workloads, instances and backends: targets, paths, ports and IPs). A new environment is a new folder.
+
+**The files are checked against a schema** (`schemas/values.schema.json` for the platform file, `schemas/apps.schema.json` for the app files) before anything is planned, and the validator also checks across the files of an environment (duplicate names, files that would be ignored, at least one backend): unknown or misspelled keys (for example `replica` instead of `replicas`), wrong types, values out of range, missing required fields, and a backend without exactly one target are reported with the file and line, for example `envs/demo/apps/demo.yaml:5: workloads.web: unknown key 'replica' - did you mean 'replicas'?`. This runs
 
 - locally: `make validate-values` (needs `python3 -m pip install -r scripts/requirements.txt`),
 - in CI, where each error shows up as an annotation on the pull request, and
@@ -15,7 +18,7 @@ The schema only checks the shape. What needs other data (a backend points to an 
 
 The layers use a partial S3 backend. `scripts/tf.sh` passes the bucket, region and state key to `terraform init` with `-backend-config`, taking the bucket and region from `common.state_bucket` and `common.region`, so `values.yaml` is the only place that has them. These two keys must be written as `key: value` on one line directly under `common:`, because `scripts/common-value.sh` reads them with `awk` instead of a YAML parser (so no extra tool is needed). `make validate-values` compares that reader with a real YAML parser and fails if they disagree.
 
-**`values.yaml`**
+**Platform file (`values.yaml`)**
 
 | Key | Default | Description |
 |---|---|---|
@@ -30,9 +33,29 @@ The layers use a partial S3 backend. `scripts/tf.sh` passes the bucket, region a
 | `compute.eks` | Spot `t3.small`/`t3a.small`, 1 node (max 2) | Node group: `instance_types`, `capacity_type`, `desired_size`, `min_size`, `max_size`; optional `public_access_cidrs` (who may reach the Kubernetes API endpoint, default `0.0.0.0/0`, see [Limitations](architecture.md#limitations)) |
 | `compute.kubernetes_version` | `null` | EKS version. `null` = the EKS default for new clusters |
 
+## App files
+
+```
+envs/demo/
+  values.yaml            platform settings (the platform team)
+  apps/
+    demo.yaml            workloads, instances and backends
+    team-a/              any number of files, also in sub-folders, for example one folder per team
+      web.yaml
+      routes.yaml
+```
+
+- A file declares any of `workloads:`, `instances:` and `backends:`. `common`, `network` and `compute` are **not** allowed there, and the three app sections are not allowed in `values.yaml` (the validator and Terraform say where the section should go).
+- Only files that end in `.yaml` are read. A `.yml` or `.yaml.bak` would be ignored, so it is reported as an error instead.
+- The files are **merged as a union**, in sorted order. A workload, an instance or a backend name may be defined **once in the whole environment**; a name that two files define is an error that names both files, for example `workload 'web' is defined in apps/a.yaml and apps/b.yaml`. Nothing is overridden, so it is always clear which file decides.
+- One namespace per environment: a backend in one file may point to a workload or instance that another file defines. Paths, NodePorts and priorities are checked after the merge, so they cannot collide between teams either.
+- The environment needs at least one backend.
+- To add a team: add a file (or a folder) under `apps/`. The first line of an app file is the editor schema hint, `# yaml-language-server: $schema=<relative path>/schemas/apps.schema.json`; the path depends on the depth of the file (`../../../schemas/apps.schema.json` from `envs/demo/apps/`, one more `../` from a sub-folder).
+- Only the network layer reads the app files. It resolves them once and the other layers read the result from SSM, so adding a file does not touch their code.
+
 ## Workloads, instances and backends
 
-`values.yaml` separates *what runs* from *how traffic reaches it*:
+The app files separate *what runs* from *how traffic reaches it*:
 
 - `workloads:` are Deployments on the EKS cluster (image, replicas, ports).
 - `instances:` are Nginx instances in VPC-B (instance type, IP).
@@ -123,10 +146,10 @@ To add a template, the platform team adds an entry to `templates.yaml` and the u
 
 ## Environments
 
-The Terraform code of the layers lives once, in `layers/`. An environment is a folder under `envs/` that contains only a `values.yaml`:
+The Terraform code of the layers lives once, in `layers/`. An environment is a folder under `envs/` that contains a `values.yaml` and its app files, and no Terraform code:
 
 ```bash
-cp -r envs/demo envs/staging        # then edit envs/staging/values.yaml
+cp -r envs/demo envs/staging        # then edit envs/staging/values.yaml and the files in envs/staging/apps/
 make plan ENV=staging LAYER=network
 make apply-all ENV=staging
 ```

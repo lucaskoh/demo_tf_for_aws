@@ -12,8 +12,8 @@ The diagram and the request flow are in the [README](../README.md#architecture).
 | **ALB with `instance` target for EKS** | The Node Group's Auto Scaling Group is attached directly to the target group. This avoids installing the AWS Load Balancer Controller for a demo. |
 | **ALB with `ip` target for EC2** | Allows the ALB in VPC-A to target a private IP in the peered VPC-B. |
 | **Spot instances for EKS nodes** | Lowest-cost compute for a short-lived environment. |
-| **Layers shared by all environments** | The Terraform code lives once in `layers/`; an environment is a folder with only a `values.yaml`. Adding `staging` means copying that folder and editing the values. |
-| **Routes are separate from what runs** | `workloads`, `instances` and `backends` are different sections of `values.yaml`. A backend is only a path that leads to a workload or an instance, so one workload can have several paths, and a workload nobody routes to stays inside the cluster. |
+| **Layers shared by all environments** | The Terraform code lives once in `layers/`; an environment is a folder with a `values.yaml` (platform settings) and the app files of its teams, and no Terraform code. Adding `staging` means copying that folder and editing the values. |
+| **Routes are separate from what runs** | `workloads`, `instances` and `backends` are different sections of the app files. A backend is only a path that leads to a workload or an instance, so one workload can have several paths, and a workload nobody routes to stays inside the cluster. |
 | **Numbers are derived, not chosen** | NodePorts and ALB priorities come from a hash of the name, so adding or removing something never changes the others. EC2 private IPs are not derived at all: AWS picks a free address, so they cannot collide. Security group rules are generated from what is routed. |
 | **EC2 instances come from image templates** | An instance names a template from `templates/ec2/` (AMI and boot script) maintained by the platform team; it cannot pick an arbitrary image or script. |
 

@@ -1,0 +1,9 @@
+workloads:
+  api:
+    image: hashicorp/http-echo:1.0
+    container_port: 5678
+    health_check_path: /api
+backends:
+  api:
+    path: api
+    workload: api

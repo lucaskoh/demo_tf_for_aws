@@ -1,0 +1,6 @@
+workloads:
+  web:
+    replicas: 2
+instances:
+  legacy:
+    template: nginx-demo

@@ -48,7 +48,8 @@ demo_tf_for_aws/
 │   ├── demo-page.html.tftpl  # the demo page (EKS and EC2)
 │   └── ec2/                  # EC2 image templates: templates.yaml + one user data file each
 ├── schemas/
-│   ├── values.schema.json    # JSON Schema of envs/<environment>/values.yaml
+│   ├── values.schema.json    # JSON Schema of envs/<environment>/values.yaml (platform settings)
+│   ├── apps.schema.json      # JSON Schema of the files under envs/<environment>/apps/
 │   ├── ec2-templates.schema.json
 │   └── tests/                # valid and invalid examples of the schemas
 ├── scripts/
@@ -58,11 +59,13 @@ demo_tf_for_aws/
 │   ├── requirements.txt      # Python packages of the two scripts above
 │   └── check-docs.py         # checks the links of README.md and docs/*.md
 └── envs/
-    └── demo/                 # an environment is a folder with a values.yaml, no Terraform code
-        └── values.yaml
+    └── demo/                 # an environment is a folder with a values.yaml and its app files, no Terraform code
+        ├── values.yaml       # platform settings: common, network, compute
+        └── apps/             # what the teams declare: workloads, instances, backends (any number of files)
+            └── demo.yaml
 ```
 
-Each folder under `layers/` is a complete root module with its own `backend.tf`, `versions.tf`, `variables.tf`, `values.tf` (reads `envs/<environment>/values.yaml`) and `main.tf`. `network`, `compute` and `edge` also have `providers.tf`, `locals.tf` and `outputs.tf`; `workloads` is smaller (its `providers.tf` configures the Kubernetes provider, and it has no outputs). `compute` and `edge` also declare the values that come from GitHub variables and secrets, and ship a `terraform.tfvars.example`. The layers are shared by all environments: the environment is chosen with the `environment` variable, which `scripts/tf.sh` sets (see [Environments](configuration.md#environments)).
+Each folder under `layers/` is a complete root module with its own `backend.tf`, `versions.tf`, `variables.tf`, `values.tf` (reads the platform file `envs/<environment>/values.yaml`; only the network layer also reads the app files) and `main.tf`. `network`, `compute` and `edge` also have `providers.tf`, `locals.tf` and `outputs.tf`; `workloads` is smaller (its `providers.tf` configures the Kubernetes provider, and it has no outputs). `compute` and `edge` also declare the values that come from GitHub variables and secrets, and ship a `terraform.tfvars.example`. The layers are shared by all environments: the environment is chosen with the `environment` variable, which `scripts/tf.sh` sets (see [Environments](configuration.md#environments)).
 
 ## Remote State
 
