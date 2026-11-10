@@ -27,7 +27,7 @@ GITHUB_REPO ?=
 # Only for repos with immutable OIDC subject claims, e.g. repo:owner@123/name@456
 OIDC_SUB_PREFIX ?=
 
-.PHONY: help bootstrap fmt fmt-check init validate-values test-schemas validate lint plan apply destroy apply-all destroy-all output clean check-layer
+.PHONY: help bootstrap fmt fmt-check init validate-values test-schemas check-docs validate lint plan apply destroy apply-all destroy-all output clean check-layer
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -56,7 +56,10 @@ validate-values: ## Check every envs/*/values.yaml and the EC2 templates against
 test-schemas: ## Run the schema fixtures in schemas/tests
 	PYTHON=$(PYTHON) bash scripts/test-schemas.sh
 
-validate: validate-values ## Check values.yaml against the schema, then validate every layer (no backend)
+check-docs: ## Check the links of README.md and docs/*.md (files and #anchors)
+	python3 scripts/check-docs.py
+
+validate: validate-values check-docs ## Check values.yaml and the docs, then validate every layer (no backend)
 	@for l in $(LAYERS); do \
 		echo "==> $$l"; \
 		$(TFL) $$l init -backend=false -input=false >/dev/null && \
