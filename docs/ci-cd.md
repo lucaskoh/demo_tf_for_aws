@@ -49,6 +49,7 @@ All layers run as steps of a single job, so one `production` approval covers the
    - require a pull request before merging (0 required approvals when you work alone, because you cannot approve your own pull request),
    - require the `validate` and `plan` status checks to pass (the workflow runs on every pull request, so these checks always exist),
    - do not allow force pushes or deletion of the branch,
+   - leave **Require review from Code Owners** off while there is a single maintainer: `.github/CODEOWNERS` then only requests reviews. Nobody can approve their own pull request, so with one owner the requirement would block every merge. Turn it on when a second account or team owns some paths,
    - **include administrators** ("Do not allow bypassing the above settings"). Without it the owner can still push directly to `main`; GitHub only prints a warning. If CI itself is broken, temporarily relax the rule in the settings to fix it.
 
 ## Security model

@@ -16,10 +16,11 @@ The goal is a small internal platform: the platform team owns the Terraform code
 10. **SSM parameters instead of `terraform_remote_state`.** Each layer publishes the few values that others read, and no layer reads another layer's state (see [How layers share values](layers-and-state.md#how-layers-share-values)).
 11. **Split `values.yaml` by owner.** The platform file `envs/<environment>/values.yaml` (`common`, `network`, `compute`) and any number of app files under `envs/<environment>/apps/` (`workloads`, `instances`, `backends`). The files are merged as a union, a name that is defined twice is an error that names both files, and a backend may point to a workload of another file (see [App files](configuration.md#app-files)).
 12. **Resolver as a tested module.** The code that merges the app files, derives the numbers and checks the rules is `modules/env-resolver`, covered by `terraform test` (see [Where the rules live](configuration.md#workloads-instances-and-backends)).
+13. **Owners per file.** `.github/CODEOWNERS` requests a review from the platform owner for the platform paths and has a place for each team's app files. It only requests reviews for now: "require review from code owners" cannot be satisfied by a single maintainer (nobody approves their own pull request) and stays off until a second account or team exists.
 
 **Planned, in this order**
 
-1. **Separate who may change what.** `CODEOWNERS` works per file, which is why `values.yaml` was split first: the platform owns `layers/`, `modules/`, `templates/`, `schemas/` and the `values.yaml` of each environment, and a team owns its own file under `apps/`. With a single maintainer, `CODEOWNERS` starts as automatic review requests only; "require review from code owners" can be turned on once a second account or team exists (nobody can approve their own pull request). An allowlist for container images and versioned platform code belong here too.
+1. **Image allowlist and versioned platform code** (a team may only use approved container images; teams pin a version of the platform code instead of following `main`).
 
 **Later**
 
