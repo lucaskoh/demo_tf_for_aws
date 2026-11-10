@@ -2,7 +2,7 @@
 # Environment values shared by all layers (network, compute, workloads, edge).
 # Each layer reads this file with yamldecode(file(...)), see values.tf in the layer.
 #
-# Not here (they come from GitHub variables / terraform.tfvars, see README):
+# Not here (they come from GitHub variables / terraform.tfvars, see docs/ci-cd.md):
 #   eks_admin_principal_arns, ci_plan_role_arn, ci_apply_role_arn,
 #   domain_name, record_name.
 #
