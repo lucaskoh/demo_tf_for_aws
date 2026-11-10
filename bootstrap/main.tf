@@ -44,7 +44,7 @@ resource "aws_s3_bucket_versioning" "state" {
 
 # The bucket is encrypted with SSE-S3 (AES256). A customer managed KMS key adds a key policy and an audit
 # trail, but costs about US$1 per month and every role that reads or writes the state would also need access
-# to the key. That is a choice for a real environment, see the README.
+# to the key. That is a choice for a real environment, see docs/ci-cd.md (From demo to production).
 # tfsec:ignore:aws-s3-encryption-customer-key
 resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
   bucket = aws_s3_bucket.state.id

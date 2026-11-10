@@ -22,7 +22,7 @@ output "vpc_b_public_subnet_ids_by_key" {
 }
 
 output "vpc_b_subnet_cidr" {
-  description = "CIDR of the VPC-B subnet (the EC2 private IP is derived from it)"
+  description = "CIDR of the VPC-B subnet (an explicit private_ip of an instance must be inside it; the others are chosen by AWS)"
   value       = local.vpc_b_subnet_cidr
 }
 
@@ -42,17 +42,17 @@ output "ec2_sg_id" {
 }
 
 output "workloads" {
-  description = "The Deployments from values.yaml, fully resolved: image, ports, replicas, health check path, routed paths and the NodePort (null when not routed)"
+  description = "The Deployments from the app files (envs/<environment>/apps/), fully resolved: image as written (null = built-in demo page), the image that is pulled (pull_image, through the proxy registry when configured), ports, replicas, health check path, routed paths and the NodePort (null when not routed)"
   value       = local.workloads
 }
 
 output "instances" {
-  description = "The EC2 instances from values.yaml, fully resolved: image template, instance type (null = default), fixed private IP and routed paths"
+  description = "The EC2 instances from the app files, fully resolved: image template, instance type (null = default), private IP (null = chosen by AWS) and routed paths"
   value       = local.instances
 }
 
 output "backends" {
-  description = "The routes from values.yaml, fully resolved (single source of truth for all layers): path, target, ALB rule priority, health check path and the port or IP of the target"
+  description = "The routes from the app files, fully resolved (single source of truth for all layers): path, target, ALB rule priority, health check path and the NodePort of the target workload (an instance target has none: the edge layer reads its real IP from the compute layer)"
   value       = local.backends
 }
 

@@ -59,7 +59,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      # Order matters: each layer reads the state of the layers before it.
+      # Order matters: each layer reads the SSM parameters that the layers before it published.
       # workloads and edge only depend on network and compute.
 
       - name: apply network

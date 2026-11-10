@@ -1,17 +1,17 @@
-# AWS Multi-VPC Hybrid Demo (EKS + EC2) with Terraform
+# Self-service AWS platform with Terraform (EKS + EC2 behind one entry point)
 
 [![Terraform](https://img.shields.io/badge/Terraform-%E2%89%A5%201.10-844FBA?logo=terraform)](https://www.terraform.io/)
 [![AWS](https://img.shields.io/badge/AWS-ap--northeast--1-FF9900?logo=amazonaws)](https://aws.amazon.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-A low-cost, reproducible reference architecture that serves **two backends living in two different VPCs** behind a single entry point, using **NLB → ALB → path-based routing**, **VPC Peering** and **Security Group chaining**. It is also a small model of a platform team: teams describe what they want in a few YAML files, and the platform builds the rest.
+A small model of an internal platform on AWS. **Teams describe what they want in a few YAML files; the platform builds it:** the Terraform code, the guardrails (schema, rules, image allowlist, EC2 image templates), the pipelines and the versioned releases belong to the platform team. The workload it deploys is a low-cost, reproducible reference architecture: **two backends in two different VPCs** behind one entry point, using **NLB → ALB → path-based routing**, **VPC Peering** and **Security Group chaining**.
 
 The demo declares two backends:
 
 - `/html1` → Nginx running on **Amazon EKS** (VPC-A, Spot node)
 - `/html2` → Nginx running on **Amazon EC2** (VPC-B, reached over VPC Peering)
 
-You can declare more of each kind, and an EKS workload can run your own container image.
+You can declare more of each kind, and an EKS workload can run your own container image. **New to the repository? Read the [team guide](docs/team-guide.md):** it walks through adding a file, the pull request, the plan and the apply.
 
 ## What is in it
 
@@ -104,6 +104,7 @@ If the CI login fails with `Not authorized to perform sts:AssumeRoleWithWebIdent
 
 | Page | What is in it |
 |---|---|
+| [Team guide](docs/team-guide.md) | Start here: from a new YAML file to a deployment (pull request, plan, apply), and the errors you will meet |
 | [Architecture details](docs/architecture.md) | Design decisions, network plan, security model and limitations |
 | [Layers and state](docs/layers-and-state.md) | Repository layout, the four layers, remote state and how layers share values |
 | [Configuration](docs/configuration.md) | The platform file and the app files: workloads, instances, routes, EC2 image templates and environments |
