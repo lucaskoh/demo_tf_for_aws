@@ -26,7 +26,7 @@ common:
   # Optional: the version of the platform code (layers, modules, templates, assets) this environment
   # runs: a git tag such as v1.2.0. Without it, or with "main", it follows the code of the commit.
   # The values and the app files always come from the commit. See docs/ci-cd.md ("Releases").
-  #   platform_version: v1.0.0
+  platform_version: v1.0.0
   # Optional: where workload images may come from (see docs/configuration.md, "Allowed images").
   # An entry that ends with / allows everything beneath it; any other entry is one repository.
   # Without it any image is allowed. Workloads without "image" (the demo page) are not affected.
