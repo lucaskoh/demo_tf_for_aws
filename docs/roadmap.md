@@ -19,9 +19,11 @@ The goal is a small internal platform: the platform team owns the Terraform code
 13. **Owners per file.** `.github/CODEOWNERS` requests a review from the platform owner for the platform paths and has a place for each team's app files. It only requests reviews for now: "require review from code owners" cannot be satisfied by a single maintainer (nobody approves their own pull request) and stays off until a second account or team exists.
 14. **Container image allowlist.** `common.allowed_images` restricts where workload images may come from (see [Allowed images](configuration.md#allowed-images)); `common.image_proxies` pulls every image through your own proxy registry such as Harbor (see [Proxy registry](configuration.md#proxy-registry-harbor-and-similar)).
 15. **Versioned platform code.** An environment can pin a released version of the code (`common.platform_version`, a git tag), so a change rolls out environment by environment (see [Platform versions](configuration.md#platform-versions) and [Releases](ci-cd.md#releases)).
+16. **Platform as a remote.** An environment repository holds only `envs/` and runs a version of this platform from a git URL (`common.platform_source` + `platform_version`, `./platform <environment> <layer> ...`), see [Environment repository](configuration.md#environment-repository).
 
 **Next**
 
+- **CI for an environment repository.** Reusable `workflow_call` workflows in the platform repository, a second repository with its secrets and `production` environment, and AWS roles that trust it (a change in `bootstrap/`). Optionally a pinned commit SHA next to the tag and an allowlist of platform sources.
 - **Optional components.** Switches such as `eks.enabled` or `dns.enabled`, with checks for combinations that make no sense.
 - **A least-privilege apply role**, as described in [From demo to production: the apply role](ci-cd.md#from-demo-to-production-the-apply-role).
 - **A real deployment of the optional DNS record (Route 53) and of a second environment.** Both are only exercised by `plan` today.

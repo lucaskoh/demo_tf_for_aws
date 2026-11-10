@@ -27,6 +27,9 @@ common:
   # runs: a git tag such as v1.2.0. Without it, or with "main", it follows the code of the commit.
   # The values and the app files always come from the commit. See docs/ci-cd.md ("Releases").
   #   platform_version: v1.0.0
+  # Environment repository (an environment repo that holds only envs/ and runs this platform from a
+  # git URL, see docs/configuration.md): platform_source needs platform_version, which must be a tag.
+  #   platform_source: github.com/your-org/platform
   # Optional: where workload images may come from (see docs/configuration.md, "Allowed images").
   # An entry that ends with / allows everything beneath it; any other entry is one repository.
   # Without it any image is allowed. Workloads without "image" (the demo page) are not affected.

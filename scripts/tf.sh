@@ -15,6 +15,10 @@
 #   common.region of envs/<environment>/values.yaml. They are read with awk (see
 #   scripts/common-value.sh), so they must be written as "key: value" on one line
 #   directly under `common:`; scripts/validate-values.py checks that in CI.
+# - Environment repository mode: when PLATFORM_ENVS_DIR is set (scripts/platform.sh does it), the
+#   environments are read from that folder instead of envs/ of this checkout, and this checkout is the
+#   platform at the version the environment asked for. PLATFORM_DATA_DIR (default .terraform-data
+#   here) says where the data directories and the plugin cache are kept.
 # - The .terraform data directory is kept per environment and layer, so running
 #   another environment never reuses the backend of a previous init. Providers
 #   are shared through a plugin cache (TF_PLUGIN_CACHE_DIR).
@@ -36,12 +40,14 @@ if ! [[ "$env_name" =~ ^[a-z0-9-]{1,20}$ ]] || ! [[ "$layer" =~ ^[a-z0-9-]+$ ]];
   exit 2
 fi
 
-values="$root/envs/$env_name/values.yaml"
+envs_dir="${PLATFORM_ENVS_DIR:-$root/envs}"
+data_root="${PLATFORM_DATA_DIR:-$root/.terraform-data}"
+values="$envs_dir/$env_name/values.yaml"
 layer_dir="$root/layers/$layer"
 
 if [ ! -f "$values" ]; then
   echo "Unknown environment '$env_name': $values does not exist." >&2
-  echo "Available: $(find "$root/envs" -mindepth 2 -maxdepth 2 -name values.yaml | sed -E 's#.*/envs/([^/]+)/values.yaml#\1#' | sort | tr '\n' ' ')" >&2
+  echo "Available: $(find "$envs_dir" -mindepth 2 -maxdepth 2 -name values.yaml | sed -E 's#.*/([^/]+)/values.yaml#\1#' | sort | tr '\n' ' ')" >&2
   exit 2
 fi
 if [ ! -d "$layer_dir" ]; then
@@ -54,9 +60,18 @@ common_value() {
   "$root/scripts/common-value.sh" "$values" "$1"
 }
 
-# A pinned environment runs the code of its tag; the values and app files still come from this checkout
 platform_version="$(common_value platform_version)"
-if [ -n "$platform_version" ] && [ "$platform_version" != "main" ]; then
+if [ -n "${PLATFORM_ENVS_DIR:-}" ]; then
+  # An environment repository runs this checkout; it must be the version the environment asked for
+  if [ -n "$platform_version" ] && [ "$platform_version" != "main" ] &&
+    ! git -C "$root" tag --points-at HEAD 2>/dev/null | grep -qx "$platform_version"; then
+    echo "This platform checkout is not $platform_version (common.platform_version of $env_name). Run it through scripts/platform.sh." >&2
+    exit 2
+  fi
+  code_root="$("$root/scripts/prepare-platform.sh" --from-checkout "$env_name")"
+  layer_dir="$code_root/layers/$layer"
+elif [ -n "$platform_version" ] && [ "$platform_version" != "main" ]; then
+  # A pinned environment runs the code of its tag; the values and app files still come from this checkout
   code_root="$("$root/scripts/prepare-platform.sh" "$env_name" "$platform_version")"
   layer_dir="$code_root/layers/$layer"
   if [ ! -d "$layer_dir" ]; then
@@ -66,10 +81,10 @@ if [ -n "$platform_version" ] && [ "$platform_version" != "main" ]; then
 fi
 
 export TF_VAR_environment="$env_name"
-export TF_DATA_DIR="$root/.terraform-data/$env_name/$layer"
+export TF_DATA_DIR="$data_root/$env_name/$layer"
 # One shared provider cache: without it every environment and layer would keep its own
 # copy of the (large) AWS provider.
-export TF_PLUGIN_CACHE_DIR="${TF_PLUGIN_CACHE_DIR:-$root/.terraform-data/plugin-cache}"
+export TF_PLUGIN_CACHE_DIR="${TF_PLUGIN_CACHE_DIR:-$data_root/plugin-cache}"
 mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
 args=("$@")

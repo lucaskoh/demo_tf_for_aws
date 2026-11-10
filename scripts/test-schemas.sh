@@ -75,6 +75,23 @@ for d in schemas/tests/envs/invalid/*/; do
   must_fail "$d" "$expect" "$d"
 done
 
+# An environment repository points the validator at its own envs folder (PLATFORM_ENVS_DIR)
+count=$((count + 1))
+if out="$(PLATFORM_ENVS_DIR="$PWD/schemas/tests/envs/valid" validate)"; then
+  echo "pass  PLATFORM_ENVS_DIR: every environment of another folder is checked"
+else
+  echo "FAIL  PLATFORM_ENVS_DIR (the valid environments should pass)"
+  sed 's/^/        /' <<<"$out"
+  failed=1
+fi
+count=$((count + 1))
+if out="$(PLATFORM_ENVS_DIR="$PWD/schemas/tests/envs/invalid" validate)"; then
+  echo "FAIL  PLATFORM_ENVS_DIR (the invalid environments should fail)"
+  failed=1
+else
+  echo "pass  PLATFORM_ENVS_DIR: an invalid environment of another folder is rejected"
+fi
+
 if [ "$failed" -ne 0 ]; then
   echo "Some schema tests failed." >&2
   exit 1

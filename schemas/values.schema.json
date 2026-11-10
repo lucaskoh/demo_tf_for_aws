@@ -21,6 +21,24 @@
         "http_port"
       ],
       "additionalProperties": false,
+      "dependentRequired": {
+        "platform_source": [
+          "platform_version"
+        ]
+      },
+      "if": {
+        "required": [
+          "platform_source"
+        ]
+      },
+      "then": {
+        "properties": {
+          "platform_version": {
+            "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$",
+            "x-error-message": "must be a version tag such as v1.2.0 when platform_source is set (a remote platform cannot follow main)"
+          }
+        }
+      },
       "properties": {
         "name": {
           "description": "Name prefix for resources.",
@@ -58,6 +76,12 @@
           "type": "string",
           "pattern": "^(main|v[0-9]+\\.[0-9]+\\.[0-9]+)$",
           "x-error-message": "must be 'main' or a version tag such as v1.2.0"
+        },
+        "platform_source": {
+          "description": "Where the platform code lives, for an environment repository that holds only envs/: a git URL (https://host/owner/repo.git, ssh://..., git@host:owner/repo.git, or the shorthand github.com/owner/repo). Needs platform_version (a tag): scripts/platform.sh fetches that version and runs it. Keep it flat under common: it is read with awk.",
+          "type": "string",
+          "pattern": "^(https://[^\\s]+|ssh://[^\\s]+|file:///[^\\s]+|git@[^\\s:]+:[^\\s]+|github\\.com/[^\\s/]+/[^\\s/]+)$",
+          "x-error-message": "must be a git URL such as https://github.com/owner/repo.git or github.com/owner/repo"
         },
         "image_proxies": {
           "description": "Proxy registries, for example Harbor proxy cache projects: upstream registry -> proxy path. When set, every workload image is pulled through the proxy of its registry (Docker Hub names without a registry count as docker.io), and an image from a registry that is not listed is rejected. Without it images are pulled as written.",
