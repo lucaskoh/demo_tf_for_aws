@@ -15,6 +15,8 @@ module "environment" {
   vpc_b_subnet_cidr  = local.vpc_b_subnet_cidr
   ec2_template_names = keys(yamldecode(file("${path.module}/../../templates/ec2/templates.yaml")))
   platform_sections  = keys(local.values)
+  allowed_images     = try(local.common.allowed_images, null)
+  image_proxies      = try(local.common.image_proxies, null)
 
   # An Auto Scaling group can be attached to 10 target groups by default (Service Quotas).
   # Raise this after you have raised the quota.

@@ -24,7 +24,7 @@ module "app" {
 
   # "app-" avoids clashes with built-in objects such as the "kubernetes" Service
   name              = "app-${each.key}"
-  image             = coalesce(each.value.image, "nginx:1.27-alpine")
+  image             = each.value.pull_image
   container_port    = each.value.container_port
   node_port         = each.value.node_port
   replicas          = each.value.replicas

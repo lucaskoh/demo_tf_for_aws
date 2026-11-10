@@ -558,3 +558,193 @@ run "all_problems_are_reported_at_once" {
     error_message = "Expected the duplicate path and the bad image: ${jsonencode(output.problems)}"
   }
 }
+
+# ---- image allowlist (common.allowed_images) ----
+
+run "no_allowlist_means_any_image" {
+  command = plan
+  variables {
+    app_sources = {
+      "a.yaml" = jsonencode({
+        workloads = { api = { image = "docker.io/anyone/anything:latest", container_port = 8080 } }
+        backends  = { a = { path = "a", workload = "api" } }
+      })
+    }
+  }
+  assert {
+    condition     = length(output.problems) == 0
+    error_message = jsonencode(output.problems)
+  }
+}
+
+run "exact_repository_allows_any_tag_digest_or_none" {
+  command = plan
+  variables {
+    allowed_images = ["nginx"]
+    app_sources = {
+      "a.yaml" = jsonencode({
+        workloads = {
+          one   = { image = "nginx:1.27-alpine" }
+          two   = { image = "nginx" }
+          three = { image = "nginx@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }
+          four  = { image = "nginx:1.27@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }
+        }
+        backends = {
+          a = { path = "a", workload = "one" }
+          b = { path = "b", workload = "two" }
+          c = { path = "c", workload = "three" }
+          d = { path = "d", workload = "four" }
+        }
+      })
+    }
+  }
+  assert {
+    condition     = length(output.problems) == 0
+    error_message = jsonencode(output.problems)
+  }
+}
+
+run "a_similar_name_is_not_the_same_repository" {
+  command = plan
+  variables {
+    allowed_images = ["nginx"]
+    app_sources = {
+      "a.yaml" = jsonencode({
+        workloads = {
+          evil  = { image = "nginxevil/x:1" }
+          other = { image = "nginx/unit:1" }
+        }
+        backends = {
+          a = { path = "a", workload = "evil" }
+          b = { path = "b", workload = "other" }
+        }
+      })
+    }
+  }
+  assert {
+    condition     = length(output.problems) == 1 && strcontains(output.problems[0], "evil (nginxevil/x:1), other (nginx/unit:1)")
+    error_message = jsonencode(output.problems)
+  }
+  assert {
+    condition     = strcontains(output.problems[0], "common.allowed_images of values.yaml (nginx)") && strcontains(output.problems[0], "ask the platform team")
+    error_message = "The message must list the allowed entries and say what to do: ${jsonencode(output.problems)}"
+  }
+}
+
+run "a_path_prefix_allows_everything_beneath_it" {
+  command = plan
+  variables {
+    allowed_images = ["ghcr.io/example-org/", "nginx"]
+    app_sources = {
+      "a.yaml" = jsonencode({
+        workloads = {
+          one = { image = "ghcr.io/example-org/api:2.0", container_port = 8080 }
+          two = { image = "ghcr.io/example-org/team/worker@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", container_port = 8080 }
+        }
+        backends = {
+          a = { path = "a", workload = "one" }
+          b = { path = "b", workload = "two" }
+        }
+      })
+    }
+  }
+  assert {
+    condition     = length(output.problems) == 0
+    error_message = jsonencode(output.problems)
+  }
+}
+
+run "a_path_prefix_does_not_match_a_longer_organisation_name" {
+  command = plan
+  variables {
+    allowed_images = ["ghcr.io/example-org/"]
+    app_sources = {
+      "a.yaml" = jsonencode({
+        workloads = {
+          ok  = { image = "ghcr.io/example-org/api:1", container_port = 8080 }
+          bad = { image = "ghcr.io/example-org-evil/api:1", container_port = 8080 }
+        }
+        backends = {
+          a = { path = "a", workload = "ok" }
+          b = { path = "b", workload = "bad" }
+        }
+      })
+    }
+  }
+  assert {
+    condition     = length(output.problems) == 1 && strcontains(output.problems[0], "Not allowed: bad (ghcr.io/example-org-evil/api:1).")
+    error_message = jsonencode(output.problems)
+  }
+}
+
+run "the_port_of_a_registry_is_not_a_tag" {
+  command = plan
+  variables {
+    allowed_images = ["localhost:5000/app", "registry.example.com:8443/"]
+    app_sources = {
+      "a.yaml" = jsonencode({
+        workloads = {
+          one   = { image = "localhost:5000/app:1", container_port = 8080 }
+          two   = { image = "localhost:5000/app", container_port = 8080 }
+          three = { image = "registry.example.com:8443/team/x:1", container_port = 8080 }
+          four  = { image = "localhost:5000/other:1", container_port = 8080 }
+        }
+        backends = {
+          a = { path = "a", workload = "one" }
+          b = { path = "b", workload = "two" }
+          c = { path = "c", workload = "three" }
+          d = { path = "d", workload = "four" }
+        }
+      })
+    }
+  }
+  assert {
+    condition     = length(output.problems) == 1 && strcontains(output.problems[0], "Not allowed: four (localhost:5000/other:1).")
+    error_message = jsonencode(output.problems)
+  }
+}
+
+run "the_built_in_demo_page_needs_no_allowlist_entry" {
+  command = plan
+  variables {
+    allowed_images = ["ghcr.io/example-org/"]
+  }
+  assert {
+    condition     = length(output.problems) == 0
+    error_message = "A workload without image is the platform's own demo page: ${jsonencode(output.problems)}"
+  }
+}
+
+run "an_unrouted_workload_is_checked_too" {
+  command = plan
+  variables {
+    allowed_images = ["nginx"]
+    app_sources = {
+      "a.yaml" = jsonencode({
+        workloads = { web = {}, worker = { image = "docker.io/anyone/job:1" } }
+        backends  = { a = { path = "a", workload = "web" } }
+      })
+    }
+  }
+  assert {
+    condition     = length(output.problems) == 1 && strcontains(output.problems[0], "worker (docker.io/anyone/job:1)")
+    error_message = jsonencode(output.problems)
+  }
+}
+
+run "a_prefix_must_match_the_start_of_the_image" {
+  command = plan
+  variables {
+    allowed_images = ["ghcr.io/example-org/"]
+    app_sources = {
+      "a.yaml" = jsonencode({
+        workloads = { sneaky = { image = "evil.example/ghcr.io/example-org/api:1", container_port = 8080 } }
+        backends  = { a = { path = "a", workload = "sneaky" } }
+      })
+    }
+  }
+  assert {
+    condition     = length(output.problems) == 1 && strcontains(output.problems[0], "sneaky")
+    error_message = jsonencode(output.problems)
+  }
+}

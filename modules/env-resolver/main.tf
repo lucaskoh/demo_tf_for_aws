@@ -32,6 +32,41 @@ locals {
   paths_by_workload = { for w in keys(local.workloads_raw) : w => [for k, b in local.backends_raw : try(b.path, "") if try(b.workload, null) == w] }
   paths_by_instance = { for i in keys(local.instances_raw) : i => [for k, b in local.backends_raw : try(b.path, "") if try(b.instance, null) == i] }
 
+  # ---- images ---------------------------------------------------------------------
+  # The image of a workload without one: the Nginx that serves the built-in demo page
+  default_image = "nginx:1.27-alpine"
+
+  # What is pulled: the image as written, or, when proxy registries are configured, the same image
+  # through the proxy of its registry. A first path segment is a registry when it has a "." or a ":"
+  # or is "localhost" (the Docker rule); otherwise the image is on Docker Hub (docker.io), where a
+  # name without "/" is an official image under library/ (the path a Harbor proxy expects).
+  image_sources = { for k, w in local.workloads_raw : k => coalesce(try(w.image, null), local.default_image) }
+  image_first   = { for k, s in local.image_sources : k => split("/", s)[0] }
+  image_has_registry = {
+    for k, s in local.image_sources : k => length(split("/", s)) > 1 && (
+      strcontains(local.image_first[k], ".") || strcontains(local.image_first[k], ":") || local.image_first[k] == "localhost"
+    )
+  }
+  image_registry = { for k, s in local.image_sources : k => local.image_has_registry[k] ? local.image_first[k] : "docker.io" }
+  image_rest = {
+    for k, s in local.image_sources : k => (
+      local.image_has_registry[k] ? substr(s, length(local.image_first[k]) + 1, -1) : s
+    )
+  }
+  # (the name part, before any tag or digest, has no "/" for an official image)
+  image_path = {
+    for k, r in local.image_rest : k => (
+      local.image_registry[k] == "docker.io" && !strcontains(split("@", r)[0], "/") ? "library/${r}" : r
+    )
+  }
+  # null when proxies are configured and the registry is not listed (reported by a rule)
+  pull_images = {
+    for k, s in local.image_sources : k => (
+      var.image_proxies == null ? s :
+      contains(keys(var.image_proxies), local.image_registry[k]) ? "${var.image_proxies[local.image_registry[k]]}/${local.image_path[k]}" : s
+    )
+  }
+
   # ---- resolved ---------------------------------------------------------------
 
   # Deployments on the EKS cluster. Only workloads that are routed to get a NodePort
@@ -40,6 +75,7 @@ locals {
     for k, w in local.workloads_raw : k => {
       # null image = the built-in Nginx demo page
       image             = try(w.image, null)
+      pull_image        = local.pull_images[k]
       container_port    = coalesce(try(w.container_port, null), 80)
       replicas          = coalesce(try(w.replicas, null), 1)
       health_check_path = coalesce(try(w.health_check_path, null), "/")

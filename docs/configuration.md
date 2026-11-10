@@ -116,6 +116,39 @@ If two entries get the same NodePort or priority (by chance, or because you set 
 
 **Where the rules live.** The network layer calls `modules/env-resolver`, which reads and merges the app files, fills in the defaults, derives the numbers and checks everything. It has no resources and never fails by itself: the rules are in `modules/env-resolver/checks.tf` (each one a condition with its message, side by side), the failing ones are listed in the `problems` output, and one precondition in `layers/network/main.tf` turns them into a single error that lists all the problems at once. The module is tested with `terraform test` (`make test-modules`, also part of `make validate` and the CI `validate` job): `tests/resolve.tftest.hcl` pins the defaults and the derived numbers (a change that would move the NodePort or priority of a running service fails there), `tests/merge.tftest.hcl` reads real folders, and `tests/checks.tftest.hcl` has one case per rule. To add a rule, add an entry to `local.rules` in `checks.tf` and a case to `checks.tftest.hcl`. The JSON Schemas and the Python validator stay: they give file and line feedback and editor support, while the rules check meaning.
 
+## Allowed images
+
+By default a workload may use any container image. The platform owner can restrict that in the platform file, so a change needs the platform owner's review (see `.github/CODEOWNERS`):
+
+```yaml
+common:
+  allowed_images:
+    - nginx                 # exactly this repository, any tag or digest (nginx:1.27, nginx@sha256:...)
+    - ghcr.io/your-org/     # everything beneath this path (ends with /)
+```
+
+- The check looks at the repository of the image: the tag and the `@sha256:` digest are removed, and the `:port` of a registry (`localhost:5000/app`) is not taken for a tag. An entry without a trailing `/` must match the whole repository (`nginx` does not allow `nginxevil/x` or `nginx/unit`), an entry with one must match the start of it (`ghcr.io/your-org/` does not allow `ghcr.io/your-org-evil/x`). Docker Hub shorthand is not expanded: `nginx` and `docker.io/library/nginx` are different entries.
+- Without `allowed_images` any image is allowed. Workloads without `image` (the built-in demo page) are not affected. Workloads that no backend routes to are checked too.
+- A workload with an image that is not allowed makes `plan` fail with the workload name, the image and the allowed list. The rule is in `modules/env-resolver/checks.tf` (tested in `tests/checks.tftest.hcl`); the schema (`schemas/values.schema.json`) checks the shape of the entries.
+- The allowlist limits where an image comes from, not what it contains or whether the tag is the one you reviewed. Pinning a digest and scanning images are separate controls, see [From demo to production](ci-cd.md#from-demo-to-production-the-apply-role).
+
+### Proxy registry (Harbor and similar)
+
+Many companies run their own registry that caches the public ones (for example Harbor "proxy cache" projects), because the cluster cannot or should not pull from the internet. `common.image_proxies` maps each upstream registry to the proxy project that serves it:
+
+```yaml
+common:
+  image_proxies:
+    docker.io: harbor.example.com/dockerhub
+    ghcr.io: harbor.example.com/ghcr
+```
+
+- Teams keep writing the image as usual (`nginx:1.27`, `someone/app:1`, `ghcr.io/your-org/app:2.0`). The platform resolves what is pulled into the `pull_image` of the workload: `harbor.example.com/dockerhub/library/nginx:1.27`, `harbor.example.com/dockerhub/someone/app:1`, `harbor.example.com/ghcr/your-org/app:2.0`. The tag or digest is kept. `workloads[*].image` keeps what was written (`null` still means the built-in demo page), and the Deployment uses `pull_image`.
+- A name without a registry is on Docker Hub (`docker.io`); an official image without `/` goes under `library/`, the path a Harbor proxy expects. The first path segment is a registry when it contains a `.` or a `:` or is `localhost` (the Docker rule); the port belongs to the registry (`localhost:5000`).
+- **Strict:** once `image_proxies` is set, an image from a registry that is not listed makes `plan` fail and names the workload and the registry. That includes the built-in demo page, which is `nginx:1.27-alpine` from Docker Hub, so `docker.io` needs an entry too.
+- `allowed_images` is checked against the image **as written**, before the rewrite. So the allowlist and the teams talk about the original names, and the platform owner can change the proxy without touching them. An image written with the proxy address itself (`harbor.example.com/dockerhub/...`) is a different repository for the allowlist.
+- Both settings are optional and independent: the allowlist says which images may run, the proxy says where they are pulled from. The proxy is not created by this repository; the cluster nodes need network access to it, and a private proxy project needs pull credentials (an `imagePullSecret`), which this demo does not configure.
+
 ## EC2 image templates
 
 An instance cannot choose its own AMI or boot script. It must name an image template that the platform team provides in `templates/ec2/templates.yaml`:
