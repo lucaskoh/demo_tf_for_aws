@@ -208,3 +208,36 @@ common:
 - **Schemas are not pinned,** so a pinned environment must stay valid for the current schema (`make validate-values` checks every environment against it). Make schema changes additive; for a breaking one, migrate the environments first.
 - **An older version does not know newer fields.** A pin must be at least the first release that has the settings your files use: a version that does not know a field ignores it silently (for example `allowed_images` or `image_proxies` need a release that contains them). The schema rejects unknown keys in the files, but it is the current schema, not the pinned one.
 - Releases are git tags (see [Releases](ci-cd.md#releases)). `make test-scripts` tests the pinning with a fake `terraform` and a throwaway repository.
+
+### Environment repository
+
+Like a Helm chart plus a values file: the platform is this repository at a version tag, and an **environment repository** holds only the environments and says which platform to run. Nothing of the Terraform code is copied.
+
+```
+env-repo/
+├── platform                 # the bootstrapper: a copy of scripts/platform.sh (small, stable)
+├── .gitignore               # .platform/  .terraform-data/
+└── envs/<environment>/
+    ├── values.yaml          # common.platform_source, common.platform_version + the platform settings
+    └── apps/**/*.yaml       # what the teams declare
+```
+
+```yaml
+common:
+  platform_source: github.com/your-org/platform   # a git URL, or the shorthand github.com/owner/repo
+  platform_version: v1.1.0                        # a tag; main is not allowed with a source
+```
+
+```bash
+cp <platform checkout>/scripts/platform.sh platform && chmod +x platform     # once
+./platform demo validate                  # the files against the schemas of that version
+./platform demo network plan              # like scripts/tf.sh <environment> <layer> <terraform args>
+./platform demo compute apply
+```
+
+- `./platform` reads the two settings, resolves the tag to a commit with `git ls-remote`, fetches that version once into `.platform/<version>-<commit>/` and runs **the `tf.sh` of that version** with `PLATFORM_ENVS_DIR` pointing at this repository's `envs/`. So the scripts and the code always match, and the commit is printed (`platform: github.com/your-org/platform v1.1.0 (abc1234567)`). A tag that is moved afterwards is fetched again into another folder, so protect the tags (see [Releases](ci-cd.md#releases)).
+- `tf.sh` copies `layers/`, `modules/`, `templates/` and `assets/` of that checkout and `envs/<environment>` of the environment repository into `.terraform-data/<environment>/external/<commit>/` and runs Terraform there (copies, because the layers read `../../envs/<environment>`). The state is the same as before: the state key contains the environment name and the bucket comes from `common.state_bucket`. The data directories and the plugin cache are in `.terraform-data/` of the environment repository (`PLATFORM_DATA_DIR`), so they survive a version change.
+- Needs `bash` and `git` (and Python with `scripts/requirements.txt` for `validate`). The environment repository needs a platform version that has this feature (`v1.1.0` or later): an older one does not know `platform_source`. Values that come from outside (`TF_VAR_eks_admin_principal_arns`, `TF_VAR_domain_name`, ...) are environment variables, as in CI; there is no `terraform.tfvars` to copy.
+- **Trust:** the platform code runs with your AWS credentials, so only use a source you trust and protect its version tags. A private platform repository needs credentials for `git` (SSH key, or a token in the URL in CI).
+- **Not done yet (next step):** the CI for an environment repository. It needs reusable workflows in the platform repository (`uses: <owner>/<platform>/.github/workflows/...@v1.x`), a second GitHub repository with its secrets and `production` environment, and AWS roles that trust that repository (`bootstrap/` trusts only this repository today). Until then an environment repository is run from a workstation.
+- Tested by `make test-scripts` (`scripts/test-external-envs.sh`: throwaway repositories and a fake `terraform`).

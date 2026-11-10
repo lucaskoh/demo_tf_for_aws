@@ -35,6 +35,8 @@ except ImportError as exc:  # pragma: no cover
     sys.exit(f"Missing Python package '{exc.name}'. Install with: python3 -m pip install -r scripts/requirements.txt")
 
 ROOT = Path(__file__).resolve().parent.parent
+# The environments: envs/ of this checkout, or the folder of an environment repository that runs this platform
+ENVS_ROOT = Path(os.environ.get("PLATFORM_ENVS_DIR") or ROOT / "envs")
 SCHEMAS = {
     "values": ROOT / "schemas" / "values.schema.json",
     "apps": ROOT / "schemas" / "apps.schema.json",
@@ -178,7 +180,7 @@ def validate_file(path: Path, kind: str):
     # parser. If the file is written in a way awk does not understand, the backend would get an
     # empty or a wrong value, so compare both readers.
     if kind == "values" and not errors and isinstance(data, dict) and isinstance(data.get("common"), dict):
-        for key in ("state_bucket", "region", "platform_version"):
+        for key in ("state_bucket", "region", "platform_version", "platform_source"):
             expected = data["common"].get(key)
             if not isinstance(expected, str):
                 continue  # (platform_version is optional: nothing to compare when it is absent)
@@ -218,7 +220,7 @@ def environment_files(env_dir: Path):
 
 def default_targets():
     targets = []
-    for env_dir in sorted(p for p in (ROOT / "envs").iterdir() if p.is_dir()):
+    for env_dir in sorted(p for p in ENVS_ROOT.iterdir() if p.is_dir()):
         targets += environment_files(env_dir)
     registry = ROOT / "templates" / "ec2" / "templates.yaml"
     if registry.is_file():
@@ -302,7 +304,7 @@ def main():
                 targets.append((p, kind_of(p, args.kind)))
     else:
         targets = default_targets()
-        env_dirs = sorted(p for p in (ROOT / "envs").iterdir() if p.is_dir())
+        env_dirs = sorted(p for p in ENVS_ROOT.iterdir() if p.is_dir())
     if not targets and not env_dirs:
         sys.exit("No files to validate.")
 

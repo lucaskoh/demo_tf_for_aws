@@ -57,8 +57,10 @@ demo_tf_for_aws/
 │   ├── tf.sh                 # runs terraform for one environment and layer (backend + environment)
 │   ├── validate-values.py    # checks values.yaml and the EC2 templates against the schemas
 │   ├── test-schemas.sh       # runs the schema fixtures
-│   ├── prepare-platform.sh   # extracts the code of a released version for an environment that pins one (called by tf.sh)
-│   ├── test-platform-pin.sh  # tests the pinning with a fake terraform
+│   ├── prepare-platform.sh   # prepares the code of a released version (or of the checkout) for an environment (called by tf.sh)
+│   ├── platform.sh           # bootstrapper of an environment repository: fetches the platform at a tag and runs its tf.sh
+│   ├── test-platform-pin.sh  # tests the version pinning with a fake terraform
+│   ├── test-external-envs.sh # tests platform.sh and the environment repository mode
 │   ├── requirements.txt      # Python packages of the two scripts above
 │   └── check-docs.py         # checks the links of README.md and docs/*.md
 └── envs/

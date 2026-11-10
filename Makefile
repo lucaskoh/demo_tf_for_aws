@@ -64,8 +64,9 @@ test-modules: ## Run the terraform tests of the modules that have them (modules/
 		$(TF) -chdir=$$m test || exit 1; \
 	done
 
-test-scripts: ## Test scripts/tf.sh and scripts/prepare-platform.sh (platform_version) with a fake terraform
+test-scripts: ## Test tf.sh, prepare-platform.sh and platform.sh (platform versions, environment repositories) with a fake terraform
 	bash scripts/test-platform-pin.sh
+	bash scripts/test-external-envs.sh
 
 check-docs: ## Check the links of README.md and docs/*.md (files and #anchors)
 	python3 scripts/check-docs.py
