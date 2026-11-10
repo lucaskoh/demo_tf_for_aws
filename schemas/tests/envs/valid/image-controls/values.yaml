@@ -10,6 +10,10 @@ common:
     - nginx
     - ghcr.io/example-org/
     - localhost:5000/app
+  image_proxies:
+    docker.io: harbor.example.com/dockerhub
+    ghcr.io: harbor.example.com/ghcr
+    localhost:5000: harbor.example.com/local
 network:
   vpc_a_cidr: 10.0.0.0/16
   vpc_b_cidr: 10.1.0.0/16

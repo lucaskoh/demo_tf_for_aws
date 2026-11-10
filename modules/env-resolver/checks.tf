@@ -104,6 +104,12 @@ locals {
     if !anytrue([for a in var.allowed_images : endswith(a, "/") ? startswith(repo, a) : repo == a])
   ]
 
+  # With proxy registries, an image from a registry that has no proxy cannot be pulled
+  unproxied_images = var.image_proxies == null ? [] : [
+    for k in keys(local.workloads) : k
+    if !contains(keys(var.image_proxies), local.image_registry[k])
+  ]
+
   # Page texts end up in an HTML page (and for instances in user_data), so no markup characters or line breaks
   bad_texts = concat(
     [for k, w in local.workloads : k if !can(regex("^[^<>\"\\n\\r]*$", "${w.page_title}${w.page_heading}"))],
@@ -194,6 +200,10 @@ locals {
     {
       failed  = length(local.disallowed_images) > 0
       message = "Images must come from a repository in common.allowed_images of values.yaml (${join(", ", coalesce(var.allowed_images, []))}). Not allowed: ${join(", ", [for k in local.disallowed_images : "${k} (${local.workloads[k].image})"])}. Use an allowed repository, or ask the platform team to add yours."
+    },
+    {
+      failed  = length(local.unproxied_images) > 0
+      message = "Images are pulled through the proxy registries of common.image_proxies in values.yaml (${join(", ", keys(coalesce(var.image_proxies, {})))}), and these have none: ${join(", ", [for k in local.unproxied_images : "${k} (${local.image_sources[k]} is on ${local.image_registry[k]})"])}. Use an image from a listed registry, or ask the platform team to add a proxy for it."
     },
     {
       failed  = length(local.bad_images) > 0 || length(local.bad_health) > 0

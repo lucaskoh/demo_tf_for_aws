@@ -42,3 +42,9 @@ variable "allowed_images" {
   type        = list(string)
   default     = null
 }
+
+variable "image_proxies" {
+  description = "Proxy registries (for example Harbor proxy cache projects): upstream registry -> proxy path, such as { \"docker.io\" = \"harbor.example.com/dockerhub\" }. When set, every image is pulled through the proxy of its registry, and an image from a registry that is not listed is a problem. Docker Hub names without a registry (nginx, someone/app) count as docker.io. null = images are pulled as written."
+  type        = map(string)
+  default     = null
+}

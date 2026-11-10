@@ -53,6 +53,20 @@
           "minimum": 1,
           "maximum": 65535
         },
+        "image_proxies": {
+          "description": "Proxy registries, for example Harbor proxy cache projects: upstream registry -> proxy path. When set, every workload image is pulled through the proxy of its registry (Docker Hub names without a registry count as docker.io), and an image from a registry that is not listed is rejected. Without it images are pulled as written.",
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-z0-9][a-z0-9.-]*(:[0-9]+)?$",
+            "x-error-message": "must be a registry host such as docker.io, ghcr.io or localhost:5000"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]*(:[0-9]+)?(/[a-z0-9._-]+)+$",
+            "x-error-message": "must be the address of the proxy project, for example harbor.example.com/dockerhub"
+          }
+        },
         "allowed_images": {
           "description": "Repositories that workload images may come from. An entry that ends with / allows everything beneath that path (ghcr.io/your-org/); any other entry allows exactly that repository with any tag or digest (nginx). Without it any image is allowed. Workloads without image (the built-in demo page) are not affected.",
           "type": "array",

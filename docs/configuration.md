@@ -132,6 +132,23 @@ common:
 - A workload with an image that is not allowed makes `plan` fail with the workload name, the image and the allowed list. The rule is in `modules/env-resolver/checks.tf` (tested in `tests/checks.tftest.hcl`); the schema (`schemas/values.schema.json`) checks the shape of the entries.
 - The allowlist limits where an image comes from, not what it contains or whether the tag is the one you reviewed. Pinning a digest and scanning images are separate controls, see [From demo to production](ci-cd.md#from-demo-to-production-the-apply-role).
 
+### Proxy registry (Harbor and similar)
+
+Many companies run their own registry that caches the public ones (for example Harbor "proxy cache" projects), because the cluster cannot or should not pull from the internet. `common.image_proxies` maps each upstream registry to the proxy project that serves it:
+
+```yaml
+common:
+  image_proxies:
+    docker.io: harbor.example.com/dockerhub
+    ghcr.io: harbor.example.com/ghcr
+```
+
+- Teams keep writing the image as usual (`nginx:1.27`, `someone/app:1`, `ghcr.io/your-org/app:2.0`). The platform resolves what is pulled into the `pull_image` of the workload: `harbor.example.com/dockerhub/library/nginx:1.27`, `harbor.example.com/dockerhub/someone/app:1`, `harbor.example.com/ghcr/your-org/app:2.0`. The tag or digest is kept. `workloads[*].image` keeps what was written (`null` still means the built-in demo page), and the Deployment uses `pull_image`.
+- A name without a registry is on Docker Hub (`docker.io`); an official image without `/` goes under `library/`, the path a Harbor proxy expects. The first path segment is a registry when it contains a `.` or a `:` or is `localhost` (the Docker rule); the port belongs to the registry (`localhost:5000`).
+- **Strict:** once `image_proxies` is set, an image from a registry that is not listed makes `plan` fail and names the workload and the registry. That includes the built-in demo page, which is `nginx:1.27-alpine` from Docker Hub, so `docker.io` needs an entry too.
+- `allowed_images` is checked against the image **as written**, before the rewrite. So the allowlist and the teams talk about the original names, and the platform owner can change the proxy without touching them. An image written with the proxy address itself (`harbor.example.com/dockerhub/...`) is a different repository for the allowlist.
+- Both settings are optional and independent: the allowlist says which images may run, the proxy says where they are pulled from. The proxy is not created by this repository; the cluster nodes need network access to it, and a private proxy project needs pull credentials (an `imagePullSecret`), which this demo does not configure.
+
 ## EC2 image templates
 
 An instance cannot choose its own AMI or boot script. It must name an image template that the platform team provides in `templates/ec2/templates.yaml`:
